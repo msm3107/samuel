@@ -1,0 +1,5 @@
+-- Local development seed data only. Never run against production.
+--
+-- Populate once the schema exists. Every inserted row must carry an explicit
+-- organization_id so seeded data exercises the same tenant boundary as
+-- production data.
