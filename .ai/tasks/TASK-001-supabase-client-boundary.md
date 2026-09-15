@@ -2,8 +2,8 @@
 
 ## Objective
 
-Establish the three Supabase clients the application needs, kept apart so that
-a service-role credential cannot reach a user request path or a client bundle.
+Establish the Supabase clients the application needs, kept apart so that a
+service-role credential cannot reach a user request path or a client bundle.
 
 ## Owner agent
 
@@ -18,7 +18,8 @@ None beyond Phase 0.
 - lib/database/**
 - lib/env/server-env.ts (only to read existing variables)
 - tests/unit/database/**
-- package.json, pnpm-lock.yaml (for `@supabase/supabase-js` only)
+- package.json, pnpm-lock.yaml (for `@supabase/supabase-js`, `@supabase/ssr`,
+  and `server-only` only)
 
 ## Forbidden files
 
@@ -29,17 +30,23 @@ None beyond Phase 0.
 
 ## Invariants
 
-- Three factories, three files, three names that state their privilege:
-  browser client (anon key), server session client (anon key plus the request's
-  cookies), service-role client (service key, no user context).
-- The service-role module throws if evaluated in a browser runtime, the same
-  way `serverEnv()` does.
+- Three factories, three files, three names that state their privilege: server
+  session client (anon key plus the request's cookies, via `next/headers`),
+  proxy session client (the same, bound to the proxy's request and response),
+  service-role client (service key, no user context).
+- No browser client. Sign-in, OAuth initiation, and the code exchange all run
+  server-side, so the anon key never enters the client bundle and no
+  `NEXT_PUBLIC_SUPABASE_*` variable exists.
+- The service-role module imports `server-only` and throws if called in a
+  browser runtime, the same way `serverEnv()` does.
 - Cookie reading and writing is settled here, once, for server components,
-  route handlers, and the proxy. No feature re-implements it.
+  route handlers, server actions, and the proxy. No feature re-implements it.
+- The proxy client never constructs its own `NextResponse`. It applies
+  refreshed cookies and cache headers onto the response the proxy already
+  built, so the CSP nonce headers survive.
 - No factory accepts a user ID, organization ID, or role as an argument.
   Identity comes from cookies; authorization comes later and elsewhere.
-- `@supabase/supabase-js` is the only dependency added. Justify it against
-  `README.md` §56 in the handoff.
+- Every added dependency is justified against `README.md` §56 in the handoff.
 
 ## Acceptance criteria
 
@@ -54,4 +61,16 @@ None beyond Phase 0.
 
 - unit: the service-role factory throws when `window` is defined
 - unit: each factory reads its key from `lib/env`, not from `process.env`
-- unit: the browser client is constructed with the anon key, never the service key
+- unit: both session clients are constructed with the anon key, never the
+  service key
+- unit: the proxy client applies refreshed cookies to the given response
+  without replacing its existing headers
+
+## Amendments
+
+- 2026-09-15: the browser client was removed and the proxy session client
+  added. A browser client would need `NEXT_PUBLIC_SUPABASE_*` variables and a
+  `connect-src` widening in the CSP; nothing in `.ai/PLAN.md` requires calling
+  Supabase from the browser. `@supabase/ssr` is required for cookie-backed
+  sessions, and `server-only` turns a client import of the service-role module
+  into a build failure. Recorded in `.ai/handoffs/TASK-001-handoff.md`.

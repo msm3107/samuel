@@ -40,11 +40,11 @@ Delivered in PR #1.
 
 **Tasks.**
 
-| ID       | Owner    | Deliverable                                                                           |
-| -------- | -------- | ------------------------------------------------------------------------------------- |
-| TASK-001 | Database | Supabase client boundary: anon, server-session, and service-role factories kept apart |
-| TASK-002 | Backend  | `requireSession()` and route protection for `/dashboard`                              |
-| TASK-003 | Frontend | `/sign-in` with magic link and Google OAuth                                           |
+| ID       | Owner    | Deliverable                                                                         |
+| -------- | -------- | ----------------------------------------------------------------------------------- |
+| TASK-001 | Database | Supabase client boundary: server-session, proxy-session, and service-role factories |
+| TASK-002 | Backend  | `requireSession()` and route protection for `/dashboard`                            |
+| TASK-003 | Frontend | `/sign-in` with magic link and Google OAuth                                         |
 
 **Depends on.** Phase 0.
 
