@@ -2,7 +2,8 @@
 
 Read `AGENTS.md` before your first change. It is the operating contract for the
 repository and applies to humans and coding agents alike. `README.md` is the
-reference specification.
+reference specification, and `.ai/PLAN.md` is the phase plan — what is being
+built next, in what order, and why.
 
 ## Prerequisites
 
@@ -75,6 +76,9 @@ Lockfiles and generated migrations do not count the same way.
 ## Not yet built
 
 Authentication, the database schema, the widget, verification, evidence
-reports, and billing are still to come, in the order given in `README.md` §70.
+reports, and billing are still to come. `.ai/PLAN.md` breaks them into phases
+with dependencies and exit criteria; the next actionable work is Phase 1
+(TASK-001 through TASK-003).
+
 End-to-end tests arrive with the first user-facing flow; Playwright is
 deliberately not a dependency until then.

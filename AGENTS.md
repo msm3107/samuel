@@ -65,6 +65,8 @@ evidence that a feature exists.
 ## 3. Before you change anything
 
 - Read `README.md` §§6–8 (domain model, tenant isolation, RLS) and §§13–17.
+- Read `.ai/PLAN.md` for the phase your work belongs to — its dependencies,
+  the security invariants it introduces, and its exit criteria.
 - Read the task file assigned to you under `.ai/tasks/`.
 - Inspect the existing implementation and its tests. Do not guess an API.
 - Identify the authorization boundary the change sits behind.
@@ -156,7 +158,13 @@ schema → domain logic → backend → frontend → tests → security review �
 
 ---
 
-## 7. Task contract
+## 7. Plan and task contract
+
+`.ai/PLAN.md` is the phase plan: what each phase delivers, what it depends on,
+the security invariants it introduces, which phases may run in parallel, which
+shared primitives are written once and by whom, and which decisions need a
+human before a phase can start. Do not start a phase whose open decisions are
+unanswered, and do not resolve one by picking a default.
 
 Every task file under `.ai/tasks/` states: objective, owner agent, allowed
 files, forbidden files, dependencies, security invariants, acceptance criteria,
