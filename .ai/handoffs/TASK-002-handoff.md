@@ -64,6 +64,9 @@ headers.
 
 - proxy.ts (modified: session state, redirect, 503, cookie application)
 - app/(dashboard)/layout.tsx (new)
+- app/(dashboard)/dashboard/page.tsx (new, placeholder; see Amendment)
+- app/(dashboard)/.gitkeep (removed)
+- .ai/tasks/TASK-002-session-and-route-protection.md (amended: page allowed)
 - lib/auth/errors.ts (new)
 - lib/auth/resolve-session-user.ts (new)
 - lib/auth/require-session.ts (new)
@@ -79,8 +82,8 @@ headers.
 - tests/integration/auth/authenticated-dashboard.test.ts (new)
 - .ai/handoffs/TASK-002-handoff.md (this file)
 
-Nothing outside TASK-002's allowed files was modified, apart from this handoff
-and the removal of the placeholder `.gitkeep`.
+Nothing outside TASK-002's allowed files (as amended) was modified, apart from
+this handoff and the removal of the two empty `.gitkeep` files.
 
 ### Security considerations
 
@@ -116,7 +119,8 @@ and the removal of the placeholder `.gitkeep`.
   - `tests/security/auth/dashboard-route-layout.test.ts` fails if any
     `page`/`route`/`default` file under `app/(dashboard)` is outside
     `app/(dashboard)/dashboard/`, or if an intercepting route exists there.
-  - It passes vacuously today because no pages exist.
+  - It checks the placeholder dashboard page today, and will catch misplaced
+    pages as more are added.
 - **Proxy ordering.** `getUser()` runs before `request.headers` is copied, so
   server components receive refreshed cookies. A mutation that forwards the
   stale cookie fails 3 tests.
@@ -132,7 +136,7 @@ and the removal of the placeholder `.gitkeep`.
 
 ### Tests
 
-Seven suites, 134 tests, in `tests/security/auth/` and
+Seven suites, 137 tests, in `tests/security/auth/` and
 `tests/integration/auth/`. They run against a stub auth server installed as
 `fetch`, so the real `@supabase/ssr` and `supabase-js` code paths execute:
 
@@ -149,8 +153,9 @@ Required tests from the contract:
 
 - **integration: authenticated request reaches the dashboard**
   (`authenticated-dashboard.test.ts`). The proxy forwards with matching nonce
-  headers, and the layout returns its children. See "Remaining concerns" for
-  what this does not prove.
+  headers, the layout returns its children, and the placeholder page renders.
+  The rendered page was also checked end to end through `next start` (see
+  "Commands run"). A real Supabase instance was not used.
 - **security: unauthenticated request redirects and reveals nothing**
   (`unauthenticated-dashboard.test.ts`)
 - **security: client-supplied `userId` does not change identity**
@@ -225,20 +230,57 @@ Final state, after all review fixes:
   - newline token plus RSC and router-state headers: 503
   - existing and non-existent paths: identical 503s
 
+After adding the placeholder dashboard page (see "Amendment" below):
+
+- `pnpm typecheck`, `pnpm lint`, `pnpm format:check`: passed
+- `pnpm test`: passed, 14 files, 174 tests
+- `pnpm test:integration`: passed, 1 file, 16 tests
+- `pnpm test:security`: passed, 8 files, 134 tests
+- `pnpm build`: passed; `/dashboard` is listed as a dynamic route, and a
+  case-sensitive search of `.next/` found neither placeholder key.
+- End to end through `next start -p 3100`, with `SUPABASE_URL` pointing at a
+  small HTTP stub of the auth endpoints (a scratch script, not committed):
+  - authenticated `/dashboard` (valid token cookie, sent with `curl`): 200,
+    `<h1>Dashboard</h1>` rendered, 8 of 8 script nonces match the CSP header,
+    no user id or email in the HTML
+  - auth-server `/user` lookups for that one request: 2, one from the proxy
+    and one from the render. The layout and page both call the check and
+    shared a single lookup, so `cache()` deduplication holds in a real render.
+  - no cookie: 303 to `/sign-in`, 0 lookups
+  - forged token: 303 to `/sign-in`, 1 lookup
+  - `RSC: 1` with a router-state header naming `(dashboard)`, no cookie: 303,
+    placeholder text absent from the body
+
+  Windows PowerShell's `Invoke-WebRequest` silently drops a manually set
+  `Cookie` header. A first attempt with it returned 303 with 0 lookups; that
+  result was discarded and the check was repeated with `curl`.
+
 Not run: anything against a real Supabase instance (see below).
+
+### Amendment: placeholder dashboard page
+
+The project owner approved adding `app/(dashboard)/dashboard/page.tsx`, and the
+TASK-002 contract records it. The page:
+
+- renders a heading and one sentence, with no user or organization data
+- calls `requireDashboardSession()` itself, because Next.js can render a page
+  without re-running its layout
+
+Tests added:
+
+- **integration:** the page renders for an authenticated request and contains
+  nothing identifying the user.
+- **security:** the page redirects to sign-in on its own when no session
+  exists. Removing its check fails this test.
+
+The route-placement guard is no longer vacuous: the page sits under
+`app/(dashboard)/dashboard/`. The empty `app/(dashboard)/.gitkeep` was removed.
 
 ### Remaining concerns
 
 **Needs a decision from you** (outside TASK-002's allowed files):
 
-1. **"An authenticated request to `/dashboard` renders" is not proven end to
-   end.** No page exists, and `app/(dashboard)/dashboard/page.tsx` is not an
-   allowed file. Today an authenticated request passes the proxy and gets a 404. The tests prove proxy pass-through and a direct `DashboardLayout()`
-   call only. Options:
-   - allow a placeholder page in this task, or
-   - move the criterion to the first task that adds a dashboard page, with an
-     end-to-end check against `next start`.
-2. **No test runs against real Supabase.** Three things block it:
+1. **No test runs against real Supabase.** Three things block it:
    - `supabase/config.toml` does not exist, and `supabase/` is not an allowed
      path.
    - `pnpm test` runs all of `tests/**` in CI, which has no Supabase, so a
@@ -251,7 +293,7 @@ Not run: anything against a real Supabase instance (see below).
    against a local Supabase instance") needs it, and real GoTrue response
    shapes, token rotation, and chunked cookies are only simulated.
 
-3. **Docker Desktop fails on launch on this machine.** Its log shows it cannot
+2. **Docker Desktop fails on launch on this machine.** Its log shows it cannot
    remove stale socket reparse points from 24 June under
    `%LOCALAPPDATA%\Docker\run` (`dockerInference`, `dockerEthernetVfkit`,
    `userAnalyticsOtlpHttp.sock`; Windows error 1920). They were not touched.
@@ -260,27 +302,27 @@ Not run: anything against a real Supabase instance (see below).
 
 **Accepted for now, to be tracked** (from the security re-review):
 
-4. **Refresh failures that are not retryable sign the user out.** For an
+3. **Refresh failures that are not retryable sign the user out.** For an
    expired access token, auth-js removes the session on any non-retryable
    refresh failure (429, 404, 408), so the 503 carries a clearing cookie and
    the next request goes to sign-in. The "no sign-in loop during an outage"
    goal therefore holds only for 5xx and network failures. This is library
    behaviour. It is an input to Phase 6 rate limiting.
-5. **Every matched path calls `getUser()`.** A request with junk cookies
+4. **Every matched path calls `getUser()`.** A request with junk cookies
    causes an outbound auth call; a request with no cookie makes none. Kept
    because TASK-001's session client relies on the proxy refreshing before
    rendering. Rate limiting is the Phase 6 shared primitive that Phase 1
    adopts retroactively.
-6. **Slow requests during an auth outage.** Requests with an expired session
+5. **Slow requests during an auth outage.** Requests with an expired session
    wait for auth-js's retry backoff (about 25 seconds each in the security
    agent's measurement), on every matched path. Bounding this needs a fetch
    timeout in `lib/database/proxy-session-client.ts`, a TASK-001 file.
-7. **Unhandled rejection from a malformed cookie.** A cookie whose `user`
+6. **Unhandled rejection from a malformed cookie.** A cookie whose `user`
    field is not an object causes an unhandled promise rejection inside auth-js
    (`insecureUserWarningProxy`). The request itself is handled correctly with
    a 503. Next's server only logs unhandled rejections, but the deployment
    runtime's behaviour is unverified. Worth an upstream report.
-8. **A header-invalid token cookie is never cleared.** auth-js treats the
+7. **A header-invalid token cookie is never cleared.** auth-js treats the
    failure as retryable, so that browser keeps getting 503 until its cookies
    are cleared. The new log fields make this distinguishable from an outage.
 
@@ -292,8 +334,9 @@ Not run: anything against a real Supabase instance (see below).
 - The stub harness in `tests/security/auth/support/` is shared; extend it
   rather than writing another.
 - `requireSession()` is wrapped in React `cache()` for per-render
-  deduplication. That is only observable in a real server render, and no test
-  covers it.
+  deduplication. That was observed once end to end (2 lookups per
+  authenticated dashboard request: proxy plus render). No automated test
+  covers it, because Vitest does not run the react-server build.
 - The TASK-001 handoff raised `getUser()` versus `getClaims()`. TASK-002 uses
   `getUser()`, as the Phase 1 brief specifies. `getClaims()` would avoid a
   network call per request with asymmetric JWT keys, but changes the

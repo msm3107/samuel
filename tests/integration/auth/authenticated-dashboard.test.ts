@@ -33,6 +33,9 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
+import { renderToStaticMarkup } from "react-dom/server";
+
+import DashboardPage from "@/app/(dashboard)/dashboard/page";
 import DashboardLayout from "@/app/(dashboard)/layout";
 import { requireSession } from "@/lib/auth/require-session";
 import proxy from "@/proxy";
@@ -237,6 +240,28 @@ describe("dashboard layout with an authenticated session", () => {
     await DashboardLayout({ children: "dashboard" });
 
     expect(store.set).not.toHaveBeenCalled();
+  });
+});
+
+describe("dashboard page with an authenticated session", () => {
+  it("renders the placeholder dashboard for an authenticated request", async () => {
+    installStubAuthServer({ mode: "normal", users: SIGNED_IN_USERS });
+    requestCookies.store = headersCookieStore([sessionCookie(USER_A)]);
+
+    const html = renderToStaticMarkup(await DashboardPage());
+
+    expect(html).toContain("<h1");
+    expect(html).toContain("Dashboard");
+  });
+
+  it("renders nothing identifying the signed-in user", async () => {
+    installStubAuthServer({ mode: "normal", users: SIGNED_IN_USERS });
+    requestCookies.store = headersCookieStore([sessionCookie(USER_A)]);
+
+    const html = renderToStaticMarkup(await DashboardPage());
+
+    expect(html).not.toContain(USER_A.id);
+    expect(html).not.toContain("@example.test");
   });
 });
 

@@ -17,6 +17,7 @@ vi.mock("next/headers", async () => {
   };
 });
 
+import DashboardPage from "@/app/(dashboard)/dashboard/page";
 import DashboardLayout from "@/app/(dashboard)/layout";
 import { isDashboardPath, SIGN_IN_PATH } from "@/lib/auth/protected-routes";
 import proxy from "@/proxy";
@@ -276,6 +277,25 @@ describe("security: unauthenticated dashboard request redirects and reveals noth
       await DashboardLayout({ children: "secret" }).catch(() => undefined);
 
       expect(authRequests).toEqual([]);
+    });
+  });
+
+  describe("dashboard page", () => {
+    // Next.js can render a page without re-running its layout, so the page
+    // must refuse on its own even if the layout check never ran.
+    it("redirects to sign-in by itself, without relying on the layout", async () => {
+      let rendered: unknown = "page did not resolve";
+      let thrown: unknown;
+      try {
+        rendered = await DashboardPage();
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(rendered).toBe("page did not resolve");
+      const digest = redirectDigest(thrown);
+      expect(digest).toMatch(/^NEXT_REDIRECT/);
+      expect(digest).toContain(SIGN_IN_PATH);
     });
   });
 
