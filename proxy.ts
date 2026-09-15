@@ -1,6 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { SessionLookupError } from "@/lib/auth/errors";
+import { isDashboardPath, SIGN_IN_PATH } from "@/lib/auth/protected-routes";
+import { resolveSessionUser } from "@/lib/auth/resolve-session-user";
+import { createProxySessionClient } from "@/lib/database/proxy-session-client";
 import { isDevelopment } from "@/lib/env/runtime-mode";
+import { serverEnv } from "@/lib/env/server-env";
+import { logger } from "@/lib/logging/logger";
 
 const NONCE_HEADER = "x-nonce";
 
@@ -35,18 +41,10 @@ function buildContentSecurityPolicy(nonce: string) {
   return directives.join("; ");
 }
 
-export default function proxy(request: NextRequest) {
-  const nonce = crypto.randomUUID().replaceAll("-", "");
-  const contentSecurityPolicy = buildContentSecurityPolicy(nonce);
-
-  // Next.js reads the nonce back off the request headers to stamp its own
-  // script tags, so the policy is set on both request and response.
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set(NONCE_HEADER, nonce);
-  requestHeaders.set("Content-Security-Policy", contentSecurityPolicy);
-
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
-
+function applySecurityHeaders(
+  response: NextResponse,
+  contentSecurityPolicy: string,
+) {
   response.headers.set("Content-Security-Policy", contentSecurityPolicy);
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -61,6 +59,121 @@ export default function proxy(request: NextRequest) {
       "max-age=63072000; includeSubDomains; preload",
     );
   }
+}
+
+/**
+ * Dashboard routes are gated here, not only in the dashboard layout: Next.js
+ * can render a child segment without re-running the layouts above it (client
+ * navigation, and RSC requests naming their router state), so the layout
+ * alone is not a per-request guarantee.
+ */
+async function resolveProxySessionState(
+  supabase: ReturnType<typeof createProxySessionClient>["supabase"],
+): Promise<
+  | { state: "signed-in" | "signed-out" }
+  | { state: "unverifiable"; error: SessionLookupError }
+> {
+  try {
+    const resolution = await resolveSessionUser(supabase.auth);
+    return {
+      state: resolution.status === "authenticated" ? "signed-in" : "signed-out",
+    };
+  } catch (error) {
+    if (error instanceof SessionLookupError) {
+      return { state: "unverifiable", error };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Enough to tell an auth outage (5xx, network) from a client-induced local
+ * failure (status 0 with a malformed token) without logging the cause's
+ * message, which for a rejected header can contain the token itself.
+ */
+function describeLookupFailure(error: SessionLookupError) {
+  const { cause } = error;
+  if (typeof cause !== "object" || cause === null) {
+    return { causeName: "none" };
+  }
+  const causeName = cause instanceof Error ? cause.name : "unknown";
+  const causeStatus =
+    "status" in cause && typeof cause.status === "number"
+      ? cause.status
+      : undefined;
+  return causeStatus === undefined ? { causeName } : { causeName, causeStatus };
+}
+
+function redirectToSignIn() {
+  // Built from configuration rather than the request's Host header, and with
+  // no trace of the requested path, so the redirect reveals nothing and cannot
+  // be steered to another origin. 303 so a POST whose session expired is
+  // followed by a GET, never by re-sending its body to sign-in.
+  const response = NextResponse.redirect(
+    new URL(SIGN_IN_PATH, serverEnv().NEXT_PUBLIC_APP_URL),
+    303,
+  );
+  // A cached redirect would bounce signed-in users too.
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
+}
+
+/**
+ * The session could not be verified, so the dashboard is not served — but the
+ * visitor is not sent to sign-in either, which would loop a signed-in user
+ * through an auth outage. A client can also cause this (a cookie holding a
+ * token that is not a valid header value never reaches the auth server), so it
+ * must fail closed here rather than trust the layout to catch it. The body is
+ * the same for every dashboard path.
+ */
+function sessionUnavailable(error: SessionLookupError) {
+  const reference = `err_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+  logger.warn({
+    event: "proxy_session_lookup_failed",
+    code: error.code,
+    reference,
+    ...describeLookupFailure(error),
+  });
+
+  return new NextResponse(
+    `Something went wrong. Please try again.\nReference: ${reference}\n`,
+    {
+      status: 503,
+      headers: {
+        "Cache-Control": "private, no-store",
+        "Content-Type": "text/plain; charset=utf-8",
+      },
+    },
+  );
+}
+
+export default async function proxy(request: NextRequest) {
+  const nonce = crypto.randomUUID().replaceAll("-", "");
+  const contentSecurityPolicy = buildContentSecurityPolicy(nonce);
+
+  // Must run before request.headers is copied below: a token refresh rewrites
+  // the request's cookies, and server components must receive the new ones.
+  const { supabase, applySessionCookies } = createProxySessionClient(request);
+  const session = await resolveProxySessionState(supabase);
+  const isDashboardRequest = isDashboardPath(request.nextUrl.pathname);
+
+  let response: NextResponse;
+  if (isDashboardRequest && session.state === "signed-out") {
+    response = redirectToSignIn();
+  } else if (isDashboardRequest && session.state === "unverifiable") {
+    response = sessionUnavailable(session.error);
+  } else {
+    // Next.js reads the nonce back off the request headers to stamp its own
+    // script tags, so the policy is set on both request and response.
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set(NONCE_HEADER, nonce);
+    requestHeaders.set("Content-Security-Policy", contentSecurityPolicy);
+    response = NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
+  applySecurityHeaders(response, contentSecurityPolicy);
+  // Also on the redirect, so a rejected session's cookies are cleared.
+  applySessionCookies(response);
 
   return response;
 }
