@@ -30,7 +30,20 @@ export type StubUser = {
 
 type AuthServerBehaviour =
   /** Validates tokens and serves refreshes for the users passed in. */
-  | { mode: "normal"; users: StubUser[]; refreshedUsers?: StubUser[] }
+  | {
+      mode: "normal";
+      users: StubUser[];
+      refreshedUsers?: StubUser[];
+      /** Answer to `POST /otp` (magic-link request). Defaults to success. */
+      otp?: { status: number; code?: string };
+      /**
+       * Single-use PKCE auth codes and the user each signs in. A second
+       * exchange of the same code fails, as GoTrue's does.
+       */
+      pkceCodes?: Record<string, StubUser>;
+      /** Auth codes whose flow state has expired. */
+      expiredPkceCodes?: string[];
+    }
   /** The auth server is unreachable. */
   | { mode: "network-failure" }
   /** The auth server answers, but with the given status for every request. */
@@ -47,6 +60,9 @@ export type RecordedAuthRequest = {
   path: string;
   authorization: string | null;
 };
+
+/** Parsed JSON bodies, recorded separately so request assertions stay exact. */
+export type RecordedAuthBody = { path: string; body: unknown };
 
 /** Mirrors supabase-js: `sb-<first hostname label>-auth-token`. */
 export function sessionCookieName() {
@@ -112,16 +128,23 @@ function json(body: unknown, status: number) {
  */
 export function installStubAuthServer(behaviour: AuthServerBehaviour) {
   const requests: RecordedAuthRequest[] = [];
+  const bodies: RecordedAuthBody[] = [];
+  const usedPkceCodes = new Set<string>();
 
   const stubFetch = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
       const url = new URL(request.url);
+      const path = `${url.pathname}${url.search}`;
       requests.push({
         method: request.method,
-        path: `${url.pathname}${url.search}`,
+        path,
         authorization: request.headers.get("authorization"),
       });
+      const bodyText = await request.clone().text();
+      if (bodyText) {
+        bodies.push({ path, body: parseJson(bodyText) });
+      }
 
       if (behaviour.mode === "network-failure") {
         throw new TypeError("fetch failed");
@@ -186,13 +209,62 @@ export function installStubAuthServer(behaviour: AuthServerBehaviour) {
         );
       }
 
+      if (url.pathname === "/auth/v1/otp" && request.method === "POST") {
+        const otp = behaviour.otp ?? { status: 200 };
+        return otp.status === 200
+          ? json({}, 200)
+          : json(
+              { code: otp.code ?? "unexpected_failure", msg: "stubbed" },
+              otp.status,
+            );
+      }
+
+      if (
+        url.pathname === "/auth/v1/token" &&
+        url.searchParams.get("grant_type") === "pkce"
+      ) {
+        const body = parseJson(bodyText) as { auth_code?: string };
+        const authCode = body.auth_code ?? "";
+        if (behaviour.expiredPkceCodes?.includes(authCode)) {
+          return json({ code: "flow_state_expired", msg: "expired" }, 403);
+        }
+        const user = behaviour.pkceCodes?.[authCode];
+        if (!user || usedPkceCodes.has(authCode)) {
+          return json({ code: "flow_state_not_found", msg: "not found" }, 404);
+        }
+        usedPkceCodes.add(authCode);
+        return json(
+          {
+            access_token: user.accessToken,
+            refresh_token: user.refreshToken,
+            token_type: "bearer",
+            expires_in: 3600,
+            expires_at: secondsFromNow(3600),
+            user: userResponse(user),
+          },
+          200,
+        );
+      }
+
+      if (url.pathname === "/auth/v1/logout" && request.method === "POST") {
+        return new Response(null, { status: 204 });
+      }
+
       return json({ code: "not_found", msg: "no stub for this route" }, 404);
     },
   );
 
   vi.stubGlobal("fetch", stubFetch);
 
-  return { requests };
+  return { requests, bodies };
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
 }
 
 export function proxyRequest(

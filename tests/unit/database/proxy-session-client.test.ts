@@ -107,6 +107,20 @@ describe("createProxySessionClient", () => {
     );
   });
 
+  it("writes the refreshed session cookie beyond the reach of injected script", () => {
+    const { applySessionCookies } = createProxySessionClient(
+      requestWithSessionCookie(),
+    );
+    simulateTokenRefresh();
+
+    const response = NextResponse.next();
+    applySessionCookies(response);
+
+    const cookie = response.cookies.get("sb-auth-token");
+    expect(cookie).toMatchObject({ httpOnly: true, secure: true, path: "/" });
+    expect(response.headers.getSetCookie().join(";")).toContain("HttpOnly");
+  });
+
   it("marks a response carrying refreshed cookies as uncacheable", () => {
     const { applySessionCookies } = createProxySessionClient(
       requestWithSessionCookie(),
