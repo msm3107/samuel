@@ -1,7 +1,6 @@
 # TASK-003b — Local Supabase and end-to-end infrastructure
 
-> **Status: draft, awaiting project-owner approval.** Do not start until it is
-> approved.
+> **Status: approved by the project owner, 2026-09-17.**
 
 ## Objective
 
