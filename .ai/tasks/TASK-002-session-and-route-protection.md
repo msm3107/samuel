@@ -18,6 +18,7 @@ TASK-001.
 - lib/auth/**
 - proxy.ts
 - app/(dashboard)/layout.tsx
+- app/(dashboard)/dashboard/page.tsx (placeholder only; see Amendments)
 - tests/integration/auth/**
 - tests/security/auth/**
 
@@ -56,3 +57,11 @@ TASK-001.
 - security: unauthenticated dashboard request redirects and reveals nothing
 - security: a client-supplied `userId` does not change the resolved identity
 - security: an expired session is rejected
+
+## Amendments
+
+- 2026-09-15: a placeholder `app/(dashboard)/dashboard/page.tsx` is allowed,
+  approved by the project owner. Without a page, "an authenticated request to
+  `/dashboard` renders" cannot be proven end to end. The placeholder shows no
+  user or tenant data and calls `requireDashboardSession()` itself, because
+  Next.js can render a page without re-running the layout above it.

@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
+import { hardenCookieOptions } from "@/lib/database/session-cookie-options";
 import { serverEnv } from "@/lib/env/server-env";
 import { logger } from "@/lib/logging/logger";
 
@@ -22,7 +23,7 @@ export async function createSessionClient() {
       setAll: (cookiesToSet) => {
         try {
           for (const { name, value, options } of cookiesToSet) {
-            cookieStore.set(name, value, options);
+            cookieStore.set(name, value, hardenCookieOptions(options));
           }
         } catch (error) {
           // Server components cannot write cookies. The proxy refreshes the

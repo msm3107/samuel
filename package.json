@@ -22,7 +22,9 @@
     "test:integration": "vitest run tests/integration --passWithNoTests",
     "test:security": "vitest run tests/security --passWithNoTests",
     "hooks:install": "simple-git-hooks",
-    "ci": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build"
+    "ci": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build",
+    "test:e2e": "node tests/e2e/auth/support/build-e2e-app.mjs && playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "simple-git-hooks": {
     "pre-commit": "pnpm format:check && pnpm lint"
@@ -39,6 +41,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "26.5.1",
     "@types/react": "19.3.0",
