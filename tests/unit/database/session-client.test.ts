@@ -77,9 +77,26 @@ describe("createSessionClient", () => {
       {},
     );
 
+    // Hardened before writing: the session cookie holds the access and refresh
+    // tokens, and this application has no browser client that needs to read it.
     expect(cookieStore.set).toHaveBeenCalledWith("sb-auth-token", "refreshed", {
       path: "/",
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
     });
+  });
+
+  it("keeps a session cookie out of reach of injected script", async () => {
+    const cookies = await cookieMethodsPassedToSupabase();
+
+    cookies.setAll(
+      [{ name: "sb-auth-token", value: "refreshed", options: {} }],
+      {},
+    );
+
+    const [, , options] = cookieStore.set.mock.calls[0] ?? [];
+    expect(options).toMatchObject({ httpOnly: true, secure: true, path: "/" });
   });
 
   it("logs rather than throws when a server component cannot write cookies", async () => {

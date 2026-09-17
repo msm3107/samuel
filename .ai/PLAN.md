@@ -40,11 +40,17 @@ Delivered in PR #1.
 
 **Tasks.**
 
-| ID       | Owner    | Deliverable                                                                         |
-| -------- | -------- | ----------------------------------------------------------------------------------- |
-| TASK-001 | Database | Supabase client boundary: server-session, proxy-session, and service-role factories |
-| TASK-002 | Backend  | `requireSession()` and route protection for `/dashboard`                            |
-| TASK-003 | Frontend | `/sign-in` with magic link and Google OAuth                                         |
+| ID        | Owner              | Deliverable                                                                              |
+| --------- | ------------------ | ---------------------------------------------------------------------------------------- |
+| TASK-001  | Database           | Supabase client boundary: server-session, proxy-session, and service-role factories      |
+| TASK-002  | Backend            | `requireSession()` and route protection for `/dashboard`                                 |
+| TASK-003a | Backend            | Sign-in server flow: magic link, Google OAuth start, PKCE callback, sign-out             |
+| TASK-003b | Database + Testing | Local Supabase config, real-Supabase test suite, e2e CI workflow (draft; needs approval) |
+| TASK-003  | Frontend           | `/sign-in` with magic link and Google OAuth, plus Playwright                             |
+
+Order: TASK-003a, then TASK-003 (screen and keyboard e2e). TASK-003b can run
+alongside TASK-003a (they touch different files) and is required before the
+Phase 1 exit criteria can be proven.
 
 **Depends on.** Phase 0.
 

@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import type { NextRequest, NextResponse } from "next/server";
 
+import { hardenCookieOptions } from "@/lib/database/session-cookie-options";
 import { serverEnv } from "@/lib/env/server-env";
 
 type PendingCookie = { name: string; value: string; options: CookieOptions };
@@ -43,7 +44,7 @@ export function createProxySessionClient(request: NextRequest) {
 
   function applySessionCookies(response: NextResponse) {
     for (const { name, value, options } of pendingCookies) {
-      response.cookies.set(name, value, options);
+      response.cookies.set(name, value, hardenCookieOptions(options));
     }
     // Supplied by @supabase/ssr whenever it sets auth cookies, so a CDN never
     // serves one user's session cookie to another.
