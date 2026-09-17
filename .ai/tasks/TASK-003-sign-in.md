@@ -69,3 +69,15 @@ criteria also need TASK-003b (local Supabase and CI).
     the screen explains the other-browser failure.
   - Playwright is added here as the first user-facing flow (`AGENTS.md` §2).
   - Local Supabase and CI moved to TASK-003b.
+- 2026-09-17, recorded after contract review:
+  - E2E support code (stub auth server, launcher, build script, placeholder
+    environment) lives in `tests/e2e/auth/support/`, inside this task's
+    `tests/e2e/auth/**` scope, mirroring `tests/security/auth/support/`.
+  - `playwright.config.ts` reads `process.env.CI` once, behind a single
+    `eslint-disable-next-line` with its reason. `eslint.config.mjs` is not
+    changed.
+  - Acceptance criterion 1 ("end to end against local Supabase") is proven
+    against the stub only. TASK-003b owns running the same Playwright suite
+    against real Supabase.
+  - Acceptance criterion 2 (Google OAuth) is untestable locally without Google
+    credentials; manual verification steps are in the handoff.

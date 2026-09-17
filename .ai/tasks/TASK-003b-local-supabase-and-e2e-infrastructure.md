@@ -30,6 +30,8 @@ the project owner).
   refresh. The orchestrator sequences them; TASK-003a does not touch them.
 - vitest.supabase.config.ts
 - tests/supabase/** (named `*.supabase.ts`, not `*.test.ts`)
+- tests/e2e/auth/support/** and playwright.config.ts (to point the existing
+  Playwright suite at real local Supabase instead of the stub)
 - scripts/local-env.mjs
 - .env.example (comments only)
 - CONTRIBUTING.md (local setup section)
@@ -72,8 +74,12 @@ the project owner).
     session that `requireSession()` accepts
   - a signed-out (revoked) session is rejected
   - the proxy refreshes an expired access token
-- The new `e2e.yml` workflow starts Supabase, runs `pnpm test:supabase`, and
-  passes on a pull request.
+- The existing Playwright suite (`tests/e2e/auth/`) runs against real local
+  Supabase: the launcher points `SUPABASE_URL` at it, and the magic-link spec
+  reads the real email from the local mail catcher (Mailpit) instead of using
+  the stub's fixed code. The stub remains for runs without Supabase.
+- The new `e2e.yml` workflow starts Supabase, installs the Playwright browser,
+  runs `pnpm test:supabase` and `pnpm test:e2e`, and passes on a pull request.
 - `CONTRIBUTING.md` documents local setup, including where local keys come
   from.
 
@@ -82,6 +88,11 @@ the project owner).
 - supabase: magic link to callback to `requireSession()`, end to end
 - supabase: revoked session is rejected
 - supabase: expired access token is refreshed through the proxy
+- supabase: registered and unregistered addresses get the same result code,
+  with response-time distributions compared (closes the enumeration gap the
+  stub cannot test)
+- e2e: magic link requested on the screen, read from Mailpit, opened in the
+  same browser, lands on the dashboard — against real Supabase
 
 ## Decision for the project owner
 
