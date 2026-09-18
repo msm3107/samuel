@@ -97,3 +97,22 @@ the project owner).
 
 - Whether the new `e2e.yml` job becomes a required status check on `main`.
   That is a repository setting, not a code change.
+
+## Amendments
+
+- 2026-09-18, during implementation:
+  - The enumeration test found a real timing leak: GoTrue answers a
+    magic-link request in about 44 ms for a registered address and about
+    141 ms for an unregistered one, reproducibly and with no overlap. Security
+    comes before the file boundary (`AGENTS.md` §1), so the fix landed here:
+    `lib/auth/sign-in/response-floor.ts` and one line in
+    `lib/auth/sign-in/actions.ts` hold every magic-link response to a fixed
+    floor plus jitter. Sending after the response (Next.js `after()`) was
+    rejected because the PKCE verifier cookie must be written during the
+    request.
+  - The real-Supabase browser suite runs from its own
+    `playwright.supabase.config.ts`, so the stub suite and its server are
+    untouched.
+  - `supabase init` also created `supabase/.gitignore`; it is kept.
+  - `package.json` gained `supabase:start`, `supabase:stop`,
+    `test:supabase`, and `test:e2e:supabase` scripts.

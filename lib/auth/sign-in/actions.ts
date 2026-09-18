@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { SIGN_IN_PATH } from "@/lib/auth/protected-routes";
 import { requestMagicLink } from "@/lib/auth/sign-in/request-magic-link";
+import { withResponseFloor } from "@/lib/auth/sign-in/response-floor";
 import type { MagicLinkResult } from "@/lib/auth/sign-in/result-codes";
 import { signOut } from "@/lib/auth/sign-in/sign-out";
 import { startGoogleSignIn } from "@/lib/auth/sign-in/start-google-sign-in";
@@ -27,7 +28,9 @@ export async function requestMagicLinkAction(
   const email =
     formData instanceof FormData ? formData.get("email") : undefined;
 
-  return { result: await requestMagicLink(email) };
+  // Every answer takes the same time, so the response cannot reveal whether
+  // the address already has an account. See response-floor.ts.
+  return { result: await withResponseFloor(() => requestMagicLink(email)) };
 }
 
 export async function startGoogleSignInAction(): Promise<void> {

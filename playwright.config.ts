@@ -16,11 +16,13 @@ const BASE_URL = `http://localhost:${PORT}`;
  * `SUPABASE_URL` points at the stub auth server started alongside the app
  * (`tests/e2e/auth/support/stub-auth-server.mjs`). Build with
  * `pnpm test:e2e`, which uses the same placeholder environment; a build made
- * with different configuration would test something else. Running against
- * real local Supabase arrives with TASK-003b.
+ * with different configuration would test something else. The same suite
+ * against real local Supabase runs from playwright.supabase.config.ts.
  */
 export default defineConfig({
   testDir: "./tests/e2e",
+  // Real-Supabase specs run under playwright.supabase.config.ts instead.
+  testIgnore: "**/*.supabase.spec.ts",
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
