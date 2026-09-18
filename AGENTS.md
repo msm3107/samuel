@@ -45,8 +45,8 @@ Present:
   callback (`app/(auth)/auth/callback/`), and the `/sign-in` screen
 - Playwright end-to-end suite (`tests/e2e/`) against a stub auth server
 
-In progress: local Supabase and real-Supabase tests (TASK-003b), application
-rate limiting on sign-in (TASK-003c).
+This list describes `main` only. Open pull requests carry further work; their
+task contracts under `.ai/tasks/` say what each adds.
 
 Not yet present (build in the order given in `README.md` §70):
 
@@ -268,8 +268,14 @@ implementing agent may be working on it. Report findings as review comments.
 **Read first.** This file, the task contract named in the PR under
 `.ai/tasks/`, its handoff under `.ai/handoffs/`, and the phase in
 `.ai/PLAN.md`. The handoff lists what was verified, how, and what is knowingly
-left open. Do not re-report an item listed there as accepted unless you can
-show it is worse than stated.
+left open.
+
+**What counts as accepted.** Only an item marked
+`Accepted by <owner name>, <date>` in a handoff or task contract is an accepted
+risk; do not re-report it unless you can show it is worse than stated. Anything
+the implementer merely lists — under "Remaining concerns" or elsewhere — is
+still open, and you may report it as a finding. These rules change only in a
+pull request of their own, never inside a pull request they govern.
 
 **Look hardest at:**
 
