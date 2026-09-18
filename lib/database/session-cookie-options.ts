@@ -24,3 +24,14 @@ export function hardenCookieOptions(options: CookieOptions): CookieOptions {
     path: options.path ?? "/",
   };
 }
+
+/**
+ * Gives every PKCE flow its own verifier slot and carries the flow's id on the
+ * redirect (`sb_flow_id`), so the callback exchanges the code with that flow's
+ * verifier. Without it, all flows share one slot: requesting a second link, or
+ * a request GoTrue rejects (auth-js then deletes the verifier), breaks a link
+ * already sent — in one tab, with ordinary use. Codex review of PR #6, F1.
+ */
+export const PKCE_FLOW_OPTIONS = {
+  experimental: { appendPkceFlowIdToRedirects: true },
+} as const;

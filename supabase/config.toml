@@ -167,10 +167,16 @@ site_url = "http://localhost:3000"
 # the port the real-Supabase end-to-end suite runs the app on. GoTrue also
 # accepts any URL on site_url's own host, so site_url must be a host that
 # serves nothing an attacker controls.
+# Each callback also appears with its PKCE flow id, which every redirect now
+# carries (`?sb_flow_id=<id>`); GoTrue matches redirect URLs including the
+# query. A hosted project needs the same pair for its production callback.
 additional_redirect_urls = [
   "http://localhost:3000/auth/callback",
+  "http://localhost:3000/auth/callback?sb_flow_id=*",
   "http://127.0.0.1:3000/auth/callback",
+  "http://127.0.0.1:3000/auth/callback?sb_flow_id=*",
   "http://localhost:3220/auth/callback",
+  "http://localhost:3220/auth/callback?sb_flow_id=*",
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600

@@ -39,6 +39,7 @@ import { GET as callback } from "@/app/(auth)/auth/callback/route";
 import { AuthenticationError } from "@/lib/auth/errors";
 import { requireSession } from "@/lib/auth/require-session";
 import { requestMagicLink } from "@/lib/auth/sign-in/request-magic-link";
+import { signOut } from "@/lib/auth/sign-in/sign-out";
 import { createServiceRoleClient } from "@/lib/database/service-role-client";
 import { serverEnv } from "@/lib/env/server-env";
 import proxy from "@/proxy";
@@ -127,6 +128,46 @@ describe("sign-in against local Supabase", () => {
     expect(location.searchParams.get("error")).toMatch(
       /^(link_expired|link_invalid|sign_in_failed)$/,
     );
+    await expect(requireSession()).rejects.toBeInstanceOf(AuthenticationError);
+  });
+
+  it("signs in with the first link after a second request for the same address", async () => {
+    // Codex review of PR #6, finding F1. GoTrue refuses a second link within
+    // its 60 s resend window; auth-js then deletes that attempt's verifier.
+    // With one shared verifier slot, that also destroyed the first link's.
+    const address = freshAddress();
+    await expect(requestMagicLink(address)).resolves.toBe("link_sent");
+    const firstLink = await waitForMagicLink(address);
+
+    await expect(requestMagicLink(address)).resolves.toBe("link_sent");
+
+    const callbackLocation = await openVerifyLink(firstLink);
+    expect(new URL(callbackLocation).searchParams.get("sb_flow_id")).toMatch(
+      /^[0-9a-f]{32}$/,
+    );
+    const response = await callback(new NextRequest(callbackLocation));
+
+    expect(response.headers.get("location")).toBe(
+      `${serverEnv().NEXT_PUBLIC_APP_URL}/dashboard`,
+    );
+    await expect(requireSession()).resolves.toEqual({
+      userId: await userIdFor(address),
+    });
+  });
+
+  it("rejects the old cookies after signing out through the application", async () => {
+    // Codex review of PR #6, finding F6: revocation had only been tested by
+    // calling GoTrue directly, never through the app's own sign-out.
+    await signInThroughMailbox(freshAddress());
+    const staleCopy = new Map(jar);
+
+    await signOut();
+    expect(() => readSession(jar)).toThrow();
+
+    jar.clear();
+    for (const [name, value] of staleCopy) {
+      jar.set(name, value);
+    }
     await expect(requireSession()).rejects.toBeInstanceOf(AuthenticationError);
   });
 

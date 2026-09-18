@@ -141,6 +141,51 @@ const GARBAGE_COOKIE_VALUES = [
   ],
 ] as const;
 
+describe("security: a refresh the auth server cannot answer keeps the session", () => {
+  // auth-js deletes the session after any non-retryable refresh failure,
+  // 429 included. The auth server counts refreshes per IP, and every
+  // server-side refresh comes from this application's IP, so anonymous junk
+  // cookies could exhaust the limit and have everyone else signed out.
+  // Codex review of PR #6, finding F2.
+  const expiredCookie = () => sessionCookie(USER_A, { expiresInSeconds: -60 });
+
+  // Non-retryable answers that say nothing about the credential. (Retryable
+  // ones — 5xx, network failures — already keep the session in auth-js, after
+  // a long backoff.)
+  it.each([
+    ["a 429", { mode: "status", status: 429 } as const],
+    ["a 408", { mode: "status", status: 408 } as const],
+    ["a 409", { mode: "status", status: 409 } as const],
+  ])(
+    "deletes no session cookie when the refresh gets %s",
+    async (_label, behaviour) => {
+      installStubAuthServer(behaviour);
+
+      for (const path of ["/dashboard", "/"]) {
+        const response = await proxy(
+          proxyRequest(path, { cookies: [expiredCookie()] }),
+        );
+
+        expect(
+          sessionSetCookieHeaders(response).filter(isClearingSetCookie),
+          `clearing Set-Cookie on ${path}`,
+        ).toEqual([]);
+      }
+    },
+  );
+
+  it("still serves the dashboard as unavailable rather than signing out", async () => {
+    installStubAuthServer({ mode: "status", status: 429 });
+
+    const response = await proxy(
+      proxyRequest("/dashboard", { cookies: [expiredCookie()] }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("location")).toBeNull();
+  });
+});
+
 describe("security: an expired session is rejected", () => {
   describe("expired access token whose refresh the auth server rejects", () => {
     const expiredCookie = () =>

@@ -4,34 +4,59 @@ import { InvalidEnvironmentError } from "./invalid-environment-error";
 
 const logLevels = ["trace", "debug", "info", "warn", "error", "fatal"] as const;
 
-const serverEnvSchema = z.object({
-  NODE_ENV: z
-    .enum(["development", "test", "production"])
-    .default("development"),
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set([
+  "localhost",
+  "127.0.0.1",
+  "[::1]",
+]);
 
-  NEXT_PUBLIC_APP_URL: z.url(),
+const serverEnvSchema = z
+  .object({
+    NODE_ENV: z
+      .enum(["development", "test", "production"])
+      .default("development"),
 
-  SUPABASE_URL: z.url(),
-  SUPABASE_ANON_KEY: z.string().min(1),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+    NEXT_PUBLIC_APP_URL: z.url(),
 
-  STRIPE_SECRET_KEY: z.string().min(1),
-  STRIPE_WEBHOOK_SECRET: z.string().min(1),
+    SUPABASE_URL: z.url(),
+    SUPABASE_ANON_KEY: z.string().min(1),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
 
-  // Price identifiers are only required once a plan is purchasable, so they
-  // stay optional until billing ships.
-  STRIPE_PRICE_FOUNDER: z.string().min(1).optional(),
-  STRIPE_PRICE_AGENCY: z.string().min(1).optional(),
-  STRIPE_PRICE_AGENCY_PRO: z.string().min(1).optional(),
+    STRIPE_SECRET_KEY: z.string().min(1),
+    STRIPE_WEBHOOK_SECRET: z.string().min(1),
 
-  // Authenticates scheduled verification calls. Short values are guessable, so
-  // the length floor is enforced as configuration rather than convention.
-  CRON_SECRET: z.string().min(32),
+    // Price identifiers are only required once a plan is purchasable, so they
+    // stay optional until billing ships.
+    STRIPE_PRICE_FOUNDER: z.string().min(1).optional(),
+    STRIPE_PRICE_AGENCY: z.string().min(1).optional(),
+    STRIPE_PRICE_AGENCY_PRO: z.string().min(1).optional(),
 
-  SENTRY_DSN: z.url().optional(),
+    // Authenticates scheduled verification calls. Short values are guessable, so
+    // the length floor is enforced as configuration rather than convention.
+    CRON_SECRET: z.string().min(32),
 
-  LOG_LEVEL: z.enum(logLevels).default("info"),
-});
+    SENTRY_DSN: z.url().optional(),
+
+    LOG_LEVEL: z.enum(logLevels).default("info"),
+  })
+  .superRefine((env, context) => {
+    // In production, keys and session tokens travel to these URLs, so plain
+    // http would send them in the clear. Loopback stays allowed: production
+    // builds are run locally by the end-to-end suites.
+    if (env.NODE_ENV !== "production") {
+      return;
+    }
+    for (const name of ["SUPABASE_URL", "NEXT_PUBLIC_APP_URL"] as const) {
+      const url = new URL(env[name]);
+      if (url.protocol !== "https:" && !LOOPBACK_HOSTS.has(url.hostname)) {
+        context.addIssue({
+          code: "custom",
+          path: [name],
+          message: "must use https in production",
+        });
+      }
+    }
+  });
 
 export type ServerEnv = Readonly<z.infer<typeof serverEnvSchema>>;
 
