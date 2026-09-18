@@ -17,11 +17,41 @@ import { isDevelopment } from "@/lib/env/runtime-mode";
  */
 export function hardenCookieOptions(options: CookieOptions): CookieOptions {
   return {
-    ...options,
+    ...capLifetime(options),
     httpOnly: true,
     secure: !isDevelopment,
     sameSite: options.sameSite ?? "lax",
     path: options.path ?? "/",
+  };
+}
+
+/**
+ * The auth server ends a session 7 days after sign-in (`auth.sessions.timebox`
+ * in `supabase/config.toml`, TASK-003e), so no cookie carrying one is kept
+ * longer. `@supabase/ssr` asks for 400 days.
+ */
+export const SESSION_COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+
+/**
+ * Caps a lifetime that runs past the limit. Removals (a maximum age of 0 or an
+ * expiry in the past) and browser-session cookies (no lifetime at all) are
+ * left as they are.
+ */
+function capLifetime(options: CookieOptions): CookieOptions {
+  const { expires, maxAge } = options;
+  const limitMs = SESSION_COOKIE_MAX_AGE_SECONDS * 1000;
+  const expiresTooLate =
+    expires !== undefined && new Date(expires).getTime() > Date.now() + limitMs;
+  const maxAgeTooLong =
+    maxAge !== undefined && maxAge > SESSION_COOKIE_MAX_AGE_SECONDS;
+
+  if (!expiresTooLate && !maxAgeTooLong) {
+    return options;
+  }
+  const { expires: _dropped, ...rest } = options;
+  return {
+    ...rest,
+    maxAge: Math.min(maxAge ?? Infinity, SESSION_COOKIE_MAX_AGE_SECONDS),
   };
 }
 

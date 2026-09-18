@@ -228,6 +228,11 @@ describe("sign-in against local Supabase", () => {
       .filter((cookie) => cookie.startsWith(sessionCookieName()));
     expect(refreshed.length).toBeGreaterThan(0);
     expect(refreshed.every((cookie) => /HttpOnly/i.test(cookie))).toBe(true);
+    // Kept no longer than the auth server's 7-day session limit (TASK-003e),
+    // not the library's 400 days.
+    expect(
+      refreshed.every((cookie) => /Max-Age=604800(;|$)/i.test(cookie)),
+    ).toBe(true);
     expect(response.headers.get("x-middleware-request-cookie")).not.toContain(
       cookieHeader,
     );

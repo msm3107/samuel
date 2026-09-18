@@ -315,6 +315,50 @@ describe("security: an expired session is rejected", () => {
     });
   });
 
+  describe("session past its absolute or idle limit (TASK-003e)", () => {
+    it("treats the session as invalid in requireSession, not as a lookup failure", async () => {
+      installStubAuthServer({ mode: "session-expired" });
+      useRequestCookies([sessionCookie(USER_A)]);
+
+      const error = await rejectionOf(requireSession());
+
+      expect(error).not.toBeInstanceOf(SessionLookupError);
+      expect(error).toBeInstanceOf(AuthenticationError);
+    });
+
+    it("redirects a proxied dashboard request to sign-in when the lookup is refused (403)", async () => {
+      // The access token is still unexpired, so no refresh happens and auth-js
+      // keeps the cookie. Every request carrying it is refused, and the next
+      // sign-in overwrites it; the proxy does not delete cookies by name, which
+      // could take a pending link's PKCE verifier with it (review finding F1).
+      installStubAuthServer({ mode: "session-expired" });
+
+      const response = await proxy(
+        proxyRequest("/dashboard", { cookies: [sessionCookie(USER_A)] }),
+      );
+
+      expectRedirectToSignIn(response);
+    });
+
+    it("redirects to sign-in and clears the session cookie when the refresh is refused (400)", async () => {
+      installStubAuthServer({ mode: "session-expired" });
+
+      const response = await proxy(
+        proxyRequest("/dashboard", {
+          cookies: [sessionCookie(USER_A, { expiresInSeconds: -60 })],
+        }),
+      );
+
+      expectRedirectToSignIn(response);
+      const sessionHeaders = sessionSetCookieHeaders(response);
+      expect(sessionHeaders.length).toBeGreaterThan(0);
+      expect(
+        sessionHeaders.every(isClearingSetCookie),
+        `session Set-Cookie headers: ${JSON.stringify(sessionHeaders)}`,
+      ).toBe(true);
+    });
+  });
+
   describe("garbage session cookie", () => {
     it.each(GARBAGE_COOKIE_VALUES)(
       "treats %s as unauthenticated in requireSession",
