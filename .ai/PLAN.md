@@ -40,17 +40,19 @@ Delivered in PR #1.
 
 **Tasks.**
 
-| ID        | Owner              | Deliverable                                                                              |
-| --------- | ------------------ | ---------------------------------------------------------------------------------------- |
-| TASK-001  | Database           | Supabase client boundary: server-session, proxy-session, and service-role factories      |
-| TASK-002  | Backend            | `requireSession()` and route protection for `/dashboard`                                 |
-| TASK-003a | Backend            | Sign-in server flow: magic link, Google OAuth start, PKCE callback, sign-out             |
-| TASK-003b | Database + Testing | Local Supabase config, real-Supabase test suite, e2e CI workflow (draft; needs approval) |
-| TASK-003  | Frontend           | `/sign-in` with magic link and Google OAuth, plus Playwright                             |
+| ID        | Owner              | Deliverable                                                                               |
+| --------- | ------------------ | ----------------------------------------------------------------------------------------- |
+| TASK-001  | Database           | Supabase client boundary: server-session, proxy-session, and service-role factories       |
+| TASK-002  | Backend            | `requireSession()` and route protection for `/dashboard`                                  |
+| TASK-003a | Backend            | Sign-in server flow: magic link, Google OAuth start, PKCE callback, sign-out              |
+| TASK-003b | Database + Testing | Local Supabase config, real-Supabase test suite, e2e CI workflow (approved)               |
+| TASK-003  | Frontend           | `/sign-in` with magic link and Google OAuth, plus Playwright                              |
+| TASK-003c | Database + Backend | Application rate limiting on sign-in (Postgres-backed; lands the Phase 6 primitive early) |
 
 Order: TASK-003a, then TASK-003 (screen and keyboard e2e). TASK-003b can run
 alongside TASK-003a (they touch different files) and is required before the
-Phase 1 exit criteria can be proven.
+Phase 1 exit criteria can be proven. TASK-003c follows TASK-003b, whose local
+Supabase it needs to apply and test its migration.
 
 **Depends on.** Phase 0.
 
@@ -466,17 +468,17 @@ Phase 2 and is the best candidate for a second agent working in parallel.
 Each of these is written once, by the phase named, before the phases that
 consume it. A second implementation of any of them is a review rejection.
 
-| Primitive                                    | Module                       | Owning phase     | Later consumers     |
-| -------------------------------------------- | ---------------------------- | ---------------- | ------------------- |
-| Supabase client factories                    | `lib/database/`              | 1                | everything          |
-| Session resolution                           | `lib/auth/`                  | 1                | everything          |
-| Role hierarchy and `requireOrganizationRole` | `lib/auth/`                  | 2                | 3–11                |
-| Audit event recording                        | `features/organizations/`    | 2                | 3–11                |
-| Hostname normalization                       | `lib/security/`              | 4                | 6, 7                |
-| Verification target validation (SSRF)        | `lib/security/`              | 4, extended in 7 | 7                   |
-| Public identifier generation                 | `lib/security/`              | 4                | 6, 9                |
-| Rate limiting                                | `lib/security/`              | 6                | 1 retroactively, 10 |
-| Typed domain errors                          | per feature, shape agreed in | 2                | everything          |
+| Primitive                                    | Module                       | Owning phase     | Later consumers |
+| -------------------------------------------- | ---------------------------- | ---------------- | --------------- |
+| Supabase client factories                    | `lib/database/`              | 1                | everything      |
+| Session resolution                           | `lib/auth/`                  | 1                | everything      |
+| Role hierarchy and `requireOrganizationRole` | `lib/auth/`                  | 2                | 3–11            |
+| Audit event recording                        | `features/organizations/`    | 2                | 3–11            |
+| Hostname normalization                       | `lib/security/`              | 4                | 6, 7            |
+| Verification target validation (SSRF)        | `lib/security/`              | 4, extended in 7 | 7               |
+| Public identifier generation                 | `lib/security/`              | 4                | 6, 9            |
+| Rate limiting                                | `lib/security/`              | 1 (TASK-003c)    | 6, 10           |
+| Typed domain errors                          | per feature, shape agreed in | 2                | everything      |
 
 ---
 

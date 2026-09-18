@@ -206,3 +206,25 @@ test("names the page for assistive technology and browser tabs", async ({
 
   await expect(page).toHaveTitle("Sign in · Article50.js");
 });
+
+test("signs out from the dashboard by keyboard and cannot return", async ({
+  page,
+}) => {
+  // Codex review of PR #6, finding F3: there was no way to end a session.
+  await page.goto("/sign-in");
+  await page.getByLabel("Email address").fill("person@example.test");
+  await page.getByRole("button", { name: "Email me a sign-in link" }).click();
+  await expect(page.getByRole("status")).toContainText("Check your email");
+
+  // The link the email would carry, opened in the same browser.
+  await page.goto(`/auth/callback?code=${AUTH_CODE}`);
+  await expect(page).toHaveURL(/\/dashboard$/);
+
+  const signOut = page.getByRole("button", { name: "Sign out" });
+  await signOut.focus();
+  await page.keyboard.press("Enter");
+
+  await expect(page).toHaveURL(/\/sign-in$/);
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/sign-in$/);
+});

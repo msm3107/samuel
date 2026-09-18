@@ -59,6 +59,54 @@ describe("parseServerEnv", () => {
     expect(env.STRIPE_PRICE_FOUNDER).toBeUndefined();
   });
 
+  describe("in production", () => {
+    function production(overrides: Record<string, string>) {
+      return { ...validEnv(), NODE_ENV: "production", ...overrides };
+    }
+
+    it.each(["SUPABASE_URL", "NEXT_PUBLIC_APP_URL"])(
+      "rejects a plain-http %s, which would carry keys and tokens in the clear",
+      (name) => {
+        expect(() =>
+          parseServerEnv(production({ [name]: "http://app.example.com" })),
+        ).toThrow(InvalidEnvironmentError);
+      },
+    );
+
+    it("accepts https URLs", () => {
+      expect(() => parseServerEnv(production({}))).not.toThrow();
+    });
+
+    it.each(["http://localhost:3210", "http://127.0.0.1:54321"])(
+      "accepts loopback %s, which local production builds use",
+      (url) => {
+        expect(() =>
+          parseServerEnv(
+            production({ SUPABASE_URL: url, NEXT_PUBLIC_APP_URL: url }),
+          ),
+        ).not.toThrow();
+      },
+    );
+
+    it("rejects a look-alike host that is not loopback", () => {
+      expect(() =>
+        parseServerEnv(
+          production({ SUPABASE_URL: "http://localhost.evil.example" }),
+        ),
+      ).toThrow(InvalidEnvironmentError);
+    });
+  });
+
+  it("allows plain http outside production, for local development", () => {
+    expect(() =>
+      parseServerEnv({
+        ...validEnv(),
+        SUPABASE_URL: "http://127.0.0.1:54321",
+        NEXT_PUBLIC_APP_URL: "http://app.example.com",
+      }),
+    ).not.toThrow();
+  });
+
   it("returns a frozen object so configuration cannot be mutated at runtime", () => {
     const env = parseServerEnv(validEnv());
 

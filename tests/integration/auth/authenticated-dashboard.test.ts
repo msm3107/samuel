@@ -227,9 +227,26 @@ describe("dashboard layout with an authenticated session", () => {
     requestCookies.store = headersCookieStore([sessionCookie(USER_A)]);
     const marker = createElement("main", { id: "dashboard-marker" });
 
-    const rendered = await DashboardLayout({ children: marker });
+    const html = renderToStaticMarkup(
+      await DashboardLayout({ children: marker }),
+    );
 
-    expect(rendered).toBe(marker);
+    expect(html).toContain('id="dashboard-marker"');
+  });
+
+  it("offers sign-out as a form, never a link", async () => {
+    installStubAuthServer({ mode: "normal", users: SIGNED_IN_USERS });
+    requestCookies.store = headersCookieStore([sessionCookie(USER_A)]);
+
+    const html = renderToStaticMarkup(
+      await DashboardLayout({ children: null }),
+    );
+
+    // Codex review of PR #6, finding F3: there was no way to end a session.
+    expect(html).toMatch(
+      /<form[^>]*>[\s\S]*<button[^>]*type="submit"[^>]*>Sign out<\/button>/,
+    );
+    expect(html).not.toMatch(/<a[^>]*>Sign out<\/a>/);
   });
 
   it("writes no cookies while rendering for a valid session", async () => {

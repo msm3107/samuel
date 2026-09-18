@@ -1,7 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-import { hardenCookieOptions } from "@/lib/database/session-cookie-options";
+import {
+  hardenCookieOptions,
+  PKCE_FLOW_OPTIONS,
+} from "@/lib/database/session-cookie-options";
 import { serverEnv } from "@/lib/env/server-env";
 import { logger } from "@/lib/logging/logger";
 
@@ -18,6 +21,7 @@ export async function createSessionClient() {
   const { SUPABASE_URL, SUPABASE_ANON_KEY } = serverEnv();
 
   return createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: PKCE_FLOW_OPTIONS,
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (cookiesToSet) => {

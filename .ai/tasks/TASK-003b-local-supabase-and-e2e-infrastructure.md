@@ -1,7 +1,6 @@
 # TASK-003b — Local Supabase and end-to-end infrastructure
 
-> **Status: draft, awaiting project-owner approval.** Do not start until it is
-> approved.
+> **Status: approved by the project owner, 2026-09-17.**
 
 ## Objective
 
@@ -54,7 +53,8 @@ the project owner).
 - Auth redirect allowlist:
   - `site_url` is `http://localhost:3000`.
   - `additional_redirect_urls` lists exact URLs only (`/auth/callback` on
-    localhost and 127.0.0.1). No wildcards.
+    localhost and 127.0.0.1). No wildcards. (GoTrue additionally accepts any
+    URL on `site_url`'s host; see Amendments.)
 - Auth rate limits (email sends, OTP verifications, token refreshes) are set
   explicitly in `config.toml`, not left implicit.
 - `pnpm test` remains runnable without Supabase, and CI's existing jobs are
@@ -98,3 +98,36 @@ the project owner).
 
 - Whether the new `e2e.yml` job becomes a required status check on `main`.
   That is a repository setting, not a code change.
+
+## Amendments
+
+- 2026-09-18, during implementation:
+  - The enumeration test found a real timing leak: GoTrue answers a
+    magic-link request in about 44 ms for a registered address and about
+    141 ms for an unregistered one, reproducibly and with no overlap. Security
+    comes before the file boundary (`AGENTS.md` §1), so the fix landed here:
+    `lib/auth/sign-in/response-floor.ts` and one line in
+    `lib/auth/sign-in/actions.ts` hold every magic-link response to a fixed
+    floor plus jitter. Sending after the response (Next.js `after()`) was
+    rejected because the PKCE verifier cookie must be written during the
+    request.
+  - The real-Supabase browser suite runs from its own
+    `playwright.supabase.config.ts`, so the stub suite and its server are
+    untouched.
+  - `supabase init` also created `supabase/.gitignore`; it is kept.
+  - `package.json` gained `supabase:start`, `supabase:stop`,
+    `test:supabase`, and `test:e2e:supabase` scripts.
+- 2026-09-18, after review:
+  - Also added, beyond the allowed list: `tests/unit/auth/response-floor.test.ts`
+    (tests the timing fix), `playwright.supabase.config.ts`, the port-3220
+    callback in the redirect allowlist, and `CONTRIBUTING.md` sections on local
+    setup and its exposure.
+  - The real-Supabase browser coverage is a new three-test spec
+    (`sign-in.supabase.spec.ts`), not the existing stub suite repointed: the
+    stub suite relies on the stub's fixed auth code, which real GoTrue never
+    issues.
+  - The redirect allowlist is not strictly exact: live checks showed GoTrue
+    also accepts any URL on `site_url`'s host (any port and path), while
+    refusing other hosts and look-alikes such as `localhost.evil.example`.
+    For production, `site_url` must be a host that serves nothing an attacker
+    controls.

@@ -172,8 +172,13 @@ export default async function proxy(request: NextRequest) {
   }
 
   applySecurityHeaders(response, contentSecurityPolicy);
-  // Also on the redirect, so a rejected session's cookies are cleared.
-  applySessionCookies(response);
+  // Also on the redirect, so a rejected session's cookies are cleared — but
+  // never when the session could not be verified: a 429 or an outage is not
+  // evidence the session is invalid, and deleting it would let anyone who can
+  // exhaust the auth server's per-IP limit sign other people out.
+  applySessionCookies(response, {
+    keepExistingSession: session.state === "unverifiable",
+  });
 
   return response;
 }
@@ -182,6 +187,8 @@ export const config = {
   matcher: [
     // Static assets and the public widget carry no HTML to protect, and the
     // widget is deliberately served without dashboard security headers.
-    "/((?!_next/static|_next/image|favicon.ico|widget|widget.js).*)",
+    // Anchored, so only `/widget`, `/widget/…` and `/widget.js` are excluded —
+    // not every path that merely starts with "widget".
+    "/((?!_next/static/|_next/image|favicon\\.ico$|widget$|widget/|widget\\.js$).*)",
   ],
 };
