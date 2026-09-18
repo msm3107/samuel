@@ -101,6 +101,18 @@ function callbackRequest(query: string) {
   return new NextRequest(`${APP_URL}/auth/callback?${query}`);
 }
 
+/**
+ * The callback URL a real link or provider redirect lands on: the redirect the
+ * app asked for (which carries this flow's `sb_flow_id`) plus the code.
+ */
+function callbackFrom(redirectTo: string | null, code: string) {
+  const url = new URL(redirectTo ?? "http://missing.invalid");
+  expect(`${url.origin}${url.pathname}`).toBe(`${APP_URL}/auth/callback`);
+  expect(url.searchParams.get("sb_flow_id")).toMatch(/^[0-9a-f]{32}$/);
+  url.searchParams.set("code", code);
+  return new NextRequest(url);
+}
+
 async function signInWithMagicLink(code: string) {
   await expect(requestMagicLink("  Person@Example.COM ")).resolves.toBe(
     "link_sent",
@@ -151,11 +163,9 @@ describe("magic-link sign-in", () => {
       otpRequest?.path ?? "",
       "http://stub.invalid",
     ).searchParams.get("redirect_to");
-    expect(redirectTo).toBe(`${APP_URL}/auth/callback`);
-    expect(jar.has(verifierCookieName())).toBe(true);
     expect(sessionCookieEntries()).toEqual([]);
 
-    const response = await GET(callbackRequest(`code=${MAGIC_LINK_CODE_A}`));
+    const response = await GET(callbackFrom(redirectTo, MAGIC_LINK_CODE_A));
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(`${APP_URL}/dashboard`);
@@ -215,15 +225,13 @@ describe("Google sign-in", () => {
     expect(providerUrl.origin).toBe("http://127.0.0.1:54321");
     expect(providerUrl.pathname).toBe("/auth/v1/authorize");
     expect(providerUrl.searchParams.get("provider")).toBe("google");
-    expect(providerUrl.searchParams.get("redirect_to")).toBe(
-      `${APP_URL}/auth/callback`,
-    );
     expect(providerUrl.searchParams.get("code_challenge")).toBeTruthy();
-    expect(jar.has(verifierCookieName())).toBe(true);
     // Starting OAuth is a browser navigation, not an auth-server call.
     expect(requests).toEqual([]);
 
-    const response = await GET(callbackRequest(`code=${GOOGLE_CODE_A}`));
+    const response = await GET(
+      callbackFrom(providerUrl.searchParams.get("redirect_to"), GOOGLE_CODE_A),
+    );
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(`${APP_URL}/dashboard`);

@@ -58,6 +58,17 @@ const EXPECTED_CALLBACK = new URL(
   serverEnv().NEXT_PUBLIC_APP_URL,
 ).toString();
 
+/**
+ * Every redirect carries its PKCE flow id (`sb_flow_id`), so the callback can
+ * use that flow's own verifier. Codex review of PR #6, finding F1.
+ */
+function expectCallbackWithFlowId(redirectTo: string | null | undefined) {
+  const url = new URL(redirectTo ?? "http://missing.invalid");
+  expect(`${url.origin}${url.pathname}`).toBe(EXPECTED_CALLBACK);
+  expect([...url.searchParams.keys()]).toEqual(["sb_flow_id"]);
+  expect(url.searchParams.get("sb_flow_id")).toMatch(/^[0-9a-f]{32}$/);
+}
+
 const OTP_PATH = "/auth/v1/otp";
 
 /** Distinctive enough that a substring match in log output is meaningful. */
@@ -148,7 +159,7 @@ describe("requestMagicLink", () => {
     expect(request?.method).toBe("POST");
     const url = new URL(request?.path ?? "", "http://stub.invalid");
     expect(url.pathname).toBe(OTP_PATH);
-    expect(url.searchParams.get("redirect_to")).toBe(EXPECTED_CALLBACK);
+    expectCallbackWithFlowId(url.searchParams.get("redirect_to"));
     expect(EXPECTED_CALLBACK).toBe("http://localhost:3000/auth/callback");
 
     const body = otpBody(bodies);
@@ -196,7 +207,8 @@ describe("requestMagicLink", () => {
         result,
         requests: requests.map(({ method, path, authorization }) => ({
           method,
-          path,
+          // Each flow id is random by design; compare the rest of the path.
+          path: path.replace(/sb_flow_id%3D[0-9a-f]+/g, "sb_flow_id%3D<id>"),
           authorization,
         })),
         body: normalizedBody,
@@ -374,7 +386,7 @@ describe("startGoogleSignIn", () => {
     expect(url.origin).toBe(new URL(serverEnv().SUPABASE_URL).origin);
     expect(url.pathname).toBe("/auth/v1/authorize");
     expect(url.searchParams.get("provider")).toBe("google");
-    expect(url.searchParams.get("redirect_to")).toBe(EXPECTED_CALLBACK);
+    expectCallbackWithFlowId(url.searchParams.get("redirect_to"));
     const challenge = url.searchParams.get("code_challenge");
     expect(challenge).toMatch(/^[A-Za-z0-9_-]{43,}$/);
     expect(url.searchParams.get("code_challenge_method")?.toLowerCase()).toBe(
@@ -415,7 +427,7 @@ describe("security: redirect URLs ignore a spoofed Host header", () => {
 
     const [request] = requests;
     const url = new URL(request?.path ?? "", "http://stub.invalid");
-    expect(url.searchParams.get("redirect_to")).toBe(EXPECTED_CALLBACK);
+    expectCallbackWithFlowId(url.searchParams.get("redirect_to"));
     expect(JSON.stringify(requests)).not.toContain("evil.example");
   });
 
@@ -429,8 +441,8 @@ describe("security: redirect URLs ignore a spoofed Host header", () => {
     if (result.status !== "redirect") {
       return;
     }
-    expect(new URL(result.url).searchParams.get("redirect_to")).toBe(
-      EXPECTED_CALLBACK,
+    expectCallbackWithFlowId(
+      new URL(result.url).searchParams.get("redirect_to"),
     );
     expect(result.url).not.toContain("evil.example");
   });
@@ -512,6 +524,6 @@ describe("server actions", () => {
     expect(url.origin).toBe(new URL(serverEnv().SUPABASE_URL).origin);
     expect(url.pathname).toBe("/auth/v1/authorize");
     expect(url.searchParams.get("provider")).toBe("google");
-    expect(url.searchParams.get("redirect_to")).toBe(EXPECTED_CALLBACK);
+    expectCallbackWithFlowId(url.searchParams.get("redirect_to"));
   });
 });

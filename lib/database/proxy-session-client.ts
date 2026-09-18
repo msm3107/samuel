@@ -1,7 +1,10 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import type { NextRequest, NextResponse } from "next/server";
 
-import { hardenCookieOptions } from "@/lib/database/session-cookie-options";
+import {
+  hardenCookieOptions,
+  PKCE_FLOW_OPTIONS,
+} from "@/lib/database/session-cookie-options";
 import { serverEnv } from "@/lib/env/server-env";
 
 type PendingCookie = { name: string; value: string; options: CookieOptions };
@@ -26,6 +29,7 @@ export function createProxySessionClient(request: NextRequest) {
   const pendingHeaders = new Map<string, string>();
 
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: PKCE_FLOW_OPTIONS,
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (cookiesToSet, headers) => {
@@ -42,8 +46,22 @@ export function createProxySessionClient(request: NextRequest) {
     },
   });
 
-  function applySessionCookies(response: NextResponse) {
+  /**
+   * With `keepExistingSession`, cookie removals are dropped. The proxy passes
+   * it when the session could not be verified: auth-js deletes the session
+   * after any non-retryable refresh failure, including a 429 caused by other
+   * people's traffic, and forwarding that deletion would sign the person out
+   * over something that says nothing about their session. Refreshed tokens
+   * are still written — a rotated refresh token must reach the browser.
+   */
+  function applySessionCookies(
+    response: NextResponse,
+    { keepExistingSession = false }: { keepExistingSession?: boolean } = {},
+  ) {
     for (const { name, value, options } of pendingCookies) {
+      if (keepExistingSession && isRemoval(value, options)) {
+        continue;
+      }
       response.cookies.set(name, value, hardenCookieOptions(options));
     }
     // Supplied by @supabase/ssr whenever it sets auth cookies, so a CDN never
@@ -54,4 +72,13 @@ export function createProxySessionClient(request: NextRequest) {
   }
 
   return { supabase, applySessionCookies };
+}
+
+function isRemoval(value: string, options: CookieOptions) {
+  return (
+    value === "" ||
+    options.maxAge === 0 ||
+    (options.expires !== undefined &&
+      new Date(options.expires).getTime() <= Date.now())
+  );
 }

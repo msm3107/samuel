@@ -140,5 +140,11 @@ fresh buckets.
   threshold the form demands a CAPTCHA rather than refusing everyone
 - security: past the refresh limit, the proxy makes no GoTrue call and deletes
   no cookie
+- supabase: two magic-link requests for one address within 60 s, then the
+  first link signs in. Real GoTrue binds the emailed link to the newest flow
+  state even when it does not send a second email, so the second request made
+  the only link fail with `bad_code_verifier` (observed in CI on PR #8). Only
+  the app's per-address spacing, answering `link_sent` without calling
+  GoTrue, prevents it.
 - supabase: atomic consumption under concurrency; window reset; anon and
   authenticated cannot execute the function or read the table
