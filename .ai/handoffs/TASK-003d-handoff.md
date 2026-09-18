@@ -23,6 +23,16 @@ Handled elsewhere, not in this task:
   deletes the verifier), destroyed the verifier a pending link needed. Both
   session clients now enable auth-js's `appendPkceFlowIdToRedirects`, so each
   flow has its own slot and its id travels in the redirect (`sb_flow_id`).
+  - **Partly fixed.** The same-address retry the review described is not
+    fixed by flow ids. In CI on PR #8, the first link after a second request
+    reached the callback with flow 1's id, found flow 1's verifier, and GoTrue
+    answered `bad_code_verifier`. GoTrue appears to bind the emailed link to
+    the newest flow state for the address even when it sends no second email
+    (inferred from that error). The fix is the app's 60-second per-address
+    spacing in TASK-003c, which never forwards the second request; that
+    regression test moved to TASK-003c's contract.
+  - What flow ids do fix, and test: a Google sign-in started and abandoned
+    while a magic link is pending no longer breaks that link.
   - The callback already passed `sb_flow_id` through.
   - `config.toml` adds a `?sb_flow_id=*` entry beside each callback URL.
   - The option lives in `PKCE_FLOW_OPTIONS` in
@@ -52,15 +62,15 @@ Handled elsewhere, not in this task:
 
 ### Tests, each proven to fail without its fix
 
-| Finding | Where                                                               | Without the fix               |
-| ------- | ------------------------------------------------------------------- | ----------------------------- |
-| F1      | `tests/supabase/auth/sign-in.supabase.ts`: two requests, first link | runs in CI (Docker down here) |
-| F2      | `tests/security/auth/expired-session.test.ts`: 429, 408, 409        | 3 tests fail                  |
-| F3      | `tests/e2e/auth/sign-in.spec.ts`: keyboard sign-out; integration    | no sign-out control           |
-| F6      | `tests/supabase/auth/sign-in.supabase.ts`: app sign-out, replay     | runs in CI (Docker down here) |
-| F7      | `tests/security/headers/proxy-matcher.test.ts`, 17 cases            | 6 fail with the old matcher   |
-| F9      | `tests/security/errors/error-pages.test.ts`, 6 cases                | pages did not exist           |
-| F10     | `tests/unit/env/server-env.test.ts`, 7 cases                        | http accepted in production   |
+| Finding | Where                                                             | Without the fix               |
+| ------- | ----------------------------------------------------------------- | ----------------------------- |
+| F1      | `tests/supabase/auth/sign-in.supabase.ts`: Google abandoned, link | runs in CI (Docker down here) |
+| F2      | `tests/security/auth/expired-session.test.ts`: 429, 408, 409      | 3 tests fail                  |
+| F3      | `tests/e2e/auth/sign-in.spec.ts`: keyboard sign-out; integration  | no sign-out control           |
+| F6      | `tests/supabase/auth/sign-in.supabase.ts`: app sign-out, replay   | runs in CI (Docker down here) |
+| F7      | `tests/security/headers/proxy-matcher.test.ts`, 17 cases          | 6 fail with the old matcher   |
+| F9      | `tests/security/errors/error-pages.test.ts`, 6 cases              | pages did not exist           |
+| F10     | `tests/unit/env/server-env.test.ts`, 7 cases                      | http accepted in production   |
 
 Tests that asserted the old redirect shape now require the flow id: the
 callback's origin and path, plus exactly one `sb_flow_id` of 32 hex

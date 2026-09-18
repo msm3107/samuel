@@ -40,6 +40,7 @@ import { AuthenticationError } from "@/lib/auth/errors";
 import { requireSession } from "@/lib/auth/require-session";
 import { requestMagicLink } from "@/lib/auth/sign-in/request-magic-link";
 import { signOut } from "@/lib/auth/sign-in/sign-out";
+import { startGoogleSignIn } from "@/lib/auth/sign-in/start-google-sign-in";
 import { createServiceRoleClient } from "@/lib/database/service-role-client";
 import { serverEnv } from "@/lib/env/server-env";
 import proxy from "@/proxy";
@@ -131,17 +132,19 @@ describe("sign-in against local Supabase", () => {
     await expect(requireSession()).rejects.toBeInstanceOf(AuthenticationError);
   });
 
-  it("signs in with the first link after a second request for the same address", async () => {
-    // Codex review of PR #6, finding F1. GoTrue refuses a second link within
-    // its 60 s resend window; auth-js then deletes that attempt's verifier.
-    // With one shared verifier slot, that also destroyed the first link's.
+  it("keeps a pending magic link working after a Google sign-in is started and abandoned", async () => {
+    // Codex review of PR #6, finding F1. Every flow used to share one PKCE
+    // verifier slot, so starting another sign-in overwrote the verifier a
+    // pending link needed. Per-flow ids give each flow its own.
     const address = freshAddress();
     await expect(requestMagicLink(address)).resolves.toBe("link_sent");
-    const firstLink = await waitForMagicLink(address);
+    const link = await waitForMagicLink(address);
 
-    await expect(requestMagicLink(address)).resolves.toBe("link_sent");
+    // The person clicks "Continue with Google", then backs out.
+    const google = await startGoogleSignIn();
+    expect(google.status).toBe("redirect");
 
-    const callbackLocation = await openVerifyLink(firstLink);
+    const callbackLocation = await openVerifyLink(link);
     expect(new URL(callbackLocation).searchParams.get("sb_flow_id")).toMatch(
       /^[0-9a-f]{32}$/,
     );
