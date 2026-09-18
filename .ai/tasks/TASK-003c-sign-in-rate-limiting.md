@@ -69,6 +69,12 @@ migration and the real-database tests).
 - **No enumeration.** A per-address limit answers exactly as a successful
   request does (`link_sent`), because a link was already sent. Only per-IP and
   global limits answer `rate_limited`, which says nothing about any address.
+- **Limits before the response floor.** The magic-link action holds every
+  answer to a fixed floor (TASK-003b), which also holds connections for any
+  request an attacker sends. Per-IP and global limits are checked first, and a
+  rejection that reveals nothing about any account (rate-limited, malformed
+  body) answers without the floor. Anything that reaches Supabase Auth keeps
+  it.
 - **Expired rows are bounded.** Each bucket row holds one window; the function
   resets an expired window in place, so the table grows only with distinct keys,
   and a cleanup deletes rows older than a day.

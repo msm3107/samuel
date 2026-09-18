@@ -2,13 +2,14 @@
 // credential is ever typed into a file by hand or committed.
 //
 //   node scripts/local-env.mjs --write          create .env.local (never overwrites)
-//   node scripts/local-env.mjs --exec <cmd...>  run <cmd> with the local env set
+//   node scripts/local-env.mjs --exec node <script> [args...]
+//                                               run a Node entry point with the local env set
 //
 // The keys the CLI reports are Supabase's published local development keys.
 // They grant nothing outside the Docker containers on this machine.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REPOSITORY_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SUPABASE_CLI = fileURLToPath(
@@ -39,8 +40,20 @@ export function localSupabaseStatus() {
       throw new Error(`\`supabase status\` did not report ${key}`);
     }
   }
+
+  // Everything that uses this — .env.local, the real-Supabase suites, the
+  // Playwright launcher — creates users and sends mail. It must only ever
+  // reach this machine, whatever the CLI or its configuration reports.
+  const { hostname } = new URL(status.API_URL);
+  if (!LOOPBACK_HOSTS.has(hostname)) {
+    throw new Error(
+      `Refusing to use Supabase at ${hostname}: only a local instance is allowed.`,
+    );
+  }
   return status;
 }
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 /**
  * The application's environment against local Supabase. Values that do not
@@ -97,14 +110,24 @@ function execWithEnv(command) {
   child.on("exit", (code) => process.exit(code ?? 1));
 }
 
-if (
-  import.meta.url === `file://${process.argv[1]?.replaceAll("\\", "/")}` ||
-  process.argv[1]?.endsWith("local-env.mjs")
-) {
+const USAGE = `Usage:
+  node scripts/local-env.mjs --write
+  node scripts/local-env.mjs --exec node <script> [args...]`;
+
+// Run as a script, not when imported by the Playwright launcher.
+const invokedDirectly =
+  process.argv[1] !== undefined &&
+  import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (invokedDirectly) {
   const [mode, ...rest] = process.argv.slice(2);
   if (mode === "--write") {
     writeEnvLocal();
   } else if (mode === "--exec") {
     execWithEnv(rest);
+  } else {
+    // A mistyped mode must fail, or a test step would pass having run nothing.
+    console.error(USAGE);
+    process.exit(1);
   }
 }

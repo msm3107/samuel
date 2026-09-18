@@ -81,17 +81,26 @@ per-address and per-IP limits then cap how many samples an attacker can take.
 ### `config.toml` choices
 
 - **Redirects.** `site_url` is `http://localhost:3000`. The redirect allowlist
-  holds exact URLs only, no wildcards: `/auth/callback` on `localhost:3000`,
+  lists exact URLs, with no wildcards: `/auth/callback` on `localhost:3000`,
   `127.0.0.1:3000` and `localhost:3220` (the real-Supabase browser suite).
+  Security review showed that GoTrue additionally accepts **any URL on
+  `site_url`'s host** (any port and path), while refusing other hosts and
+  look-alikes such as `localhost.evil.example`. So the list is not strictly
+  exact, and in production `site_url` must be a host that serves nothing an
+  attacker controls. PKCE still requires the verifier cookie on whatever URL
+  receives the code.
 - **Per-address resend throttle** (`auth.email.max_frequency`): 60 s.
 - **Local rate limits,** set explicitly and raised so the suites, which all run
   from one IP, fit in one window. The hosted project sets its own values.
   - `email_sent`: 300 per hour
   - `sign_in_sign_ups`: 150 per 5 minutes
   - `token_verifications`: 150 per 5 minutes
+  - `token_refresh`: left at the default, 150 per 5 minutes
 - **Google** is read from `env()` and `enabled = false`. No credentials are
   committed.
 - **`project_id`** is `article50`.
+- **Local only.** A header comment forbids `supabase config push`, which would
+  hand a hosted project these localhost URLs and raised limits.
 
 ### Security considerations
 
@@ -109,11 +118,16 @@ per-address and per-IP limits then cap how many samples an attacker can take.
 
 ### Tests
 
+Security review: `APPROVE WITH NON-BLOCKING NOTES`. Contract review:
+`APPROVE WITH NON-BLOCKING NOTES`. Their notes are either fixed on this branch
+or listed under Remaining concerns.
+
 Real-Supabase Vitest (`pnpm test:supabase`), 5 tests:
 
 - a magic link delivered to Mailpit, followed, and exchanged by the real
   callback; `requireSession()` returns the id GoTrue assigned
-- the same link opened twice is refused
+- the same link opened twice is refused, first by GoTrue itself (no new
+  code, only an error) and then by the callback
 - a session revoked on the auth server (`logout?scope=global`) is rejected
   while its access token is still unexpired
 - the proxy refreshes an expired access token and writes an `HttpOnly` cookie
@@ -145,22 +159,45 @@ the log when the floor is exceeded.
 - `pnpm test:e2e:supabase`: 3 passed
 - `pnpm supabase:start`, `pnpm supabase:stop`: work. The first run pulls
   images.
+- `supabase db reset`: succeeded (it applies the migrations, of which there
+  are none yet, and the seed). The real-Supabase suites passed again afterwards.
+- On PR #6, the new `End-to-end` workflow passed in 3 min 17 s, alongside CI,
+  the security suite and the dependency audit.
 
-Not run: the new `e2e.yml` on GitHub. It runs when the pull request opens.
+After review:
+
+- A mistyped `local-env.mjs` mode now prints usage and exits 1.
+- The enumeration test also fails if any request outlasts the floor. Lowering
+  the floor to 10 ms fails it; restoring the floor passes it.
 
 ### Remaining concerns
 
-- **The CI workflow is unproven until the PR runs it.** Starting Supabase and
-  installing Chromium add several minutes per run.
+- **CI cost.** The `End-to-end` job adds about 3.5 minutes per run.
 - **Whether `End-to-end` becomes a required check** on `main` is a repository
   setting for the project owner.
 - **The response floor adds about 1.3 s** to every magic-link request. That's
   acceptable for "email me a link", but it is a visible cost.
-- **Hosted SMTP may be slower than the floor.** If the log shows
-  `magic_link_response_floor_exceeded`, the floor needs raising, or the
+- **Hosted SMTP may be slower than the floor.** If
+  `magic_link_response_floor_exceeded` appears, the floor needs raising, or the
   sending needs to move off the request path in some way that keeps the PKCE
   cookie.
 - **Docker Desktop on Windows** needs Docker AI turned off (see
   `CONTRIBUTING.md`); its socket crashed the app repeatedly.
+- **The response floor holds every request for about 1.3 s,** including
+  invalid input, with no rate limit yet. On serverless hosting that is billed
+  wall time an attacker can drive. TASK-003c's contract now requires per-IP and
+  global limits before the floor, and account-independent rejections answered
+  without it.
+- **`magic_link_response_floor_exceeded` should alert, not just log,**
+  because it means the timing gap is visible again. That's Phase 12
+  (observability).
+- **Direct calls to GoTrue skip the floor.** Today the anon key is read only
+  server-side. If it is ever published to browsers, anyone could time
+  `/auth/v1/otp` directly and see the 3× gap.
+- **Workflow actions are pinned to major tags,** not commit SHAs. This matches
+  the existing `ci.yml` and `security.yml`; pinning all three is a
+  supply-chain follow-up.
+- **The local stack listens on all interfaces** (Supabase CLI default), which
+  `CONTRIBUTING.md` now warns about.
 - **TASK-003c** (application rate limits) is next and uses this local instance
   for its migration.

@@ -109,14 +109,23 @@ describe("sign-in against local Supabase", () => {
     const { link } = await signInThroughMailbox(address);
     jar.clear();
 
-    // The same email link again, as if forwarded or replayed.
-    const secondLocation = await openVerifyLink(link);
-    const response = await callback(new NextRequest(secondLocation));
+    // The same email link again, as if forwarded or replayed. GoTrue itself
+    // must refuse it: no new code, only an error. (Checking the callback alone
+    // would pass even if GoTrue issued a fresh code, because the cleared jar
+    // has no verifier either.)
+    const secondLocation = new URL(await openVerifyLink(link));
+    expect(secondLocation.searchParams.get("code")).toBeNull();
+    expect(
+      secondLocation.searchParams.get("error") ??
+        new URLSearchParams(secondLocation.hash.slice(1)).get("error"),
+    ).toBeTruthy();
 
+    // And the application turns that into a refusal, not a session.
+    const response = await callback(new NextRequest(secondLocation));
     const location = new URL(response.headers.get("location") ?? "");
     expect(location.pathname).toBe("/sign-in");
     expect(location.searchParams.get("error")).toMatch(
-      /^(link_expired|link_invalid|sign_in_failed|link_other_browser)$/,
+      /^(link_expired|link_invalid|sign_in_failed)$/,
     );
     await expect(requireSession()).rejects.toBeInstanceOf(AuthenticationError);
   });

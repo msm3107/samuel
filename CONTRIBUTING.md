@@ -36,6 +36,12 @@ sign-in stays disabled locally unless you set
 `supabase/config.toml`; see `.ai/handoffs/TASK-003-handoff.md` for the manual
 steps. `pnpm supabase:stop` shuts it all down.
 
+The local stack is for test data only. The Supabase CLI publishes Postgres
+(default credentials), the API gateway and Mailpit on all network interfaces,
+so do not run it on an untrusted network or put real data in it.
+`supabase/config.toml` is local-only: never `supabase config push` it to a
+hosted project.
+
 The application refuses to start on invalid configuration. If startup fails
 with `InvalidEnvironmentError`, the message names the variables at fault — it
 never prints their values.

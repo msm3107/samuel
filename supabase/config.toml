@@ -1,3 +1,7 @@
+# LOCAL DEVELOPMENT ONLY. Never run `supabase config push` with this file: it
+# would give a hosted project localhost URLs and the raised local rate limits
+# below. The hosted project's auth settings are managed in its dashboard.
+#
 # For detailed configuration reference documentation, visit:
 # https://supabase.com/docs/guides/local-development/cli/config
 # A string used to distinguish different Supabase projects on the same host. Defaults to the
@@ -159,8 +163,10 @@ site_url = "http://localhost:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-# Exact callback URLs only, never wildcards: the development server, and the
-# port the real-Supabase end-to-end suite runs the app on.
+# Callback URLs, listed exactly with no wildcards: the development server, and
+# the port the real-Supabase end-to-end suite runs the app on. GoTrue also
+# accepts any URL on site_url's own host, so site_url must be a host that
+# serves nothing an attacker controls.
 additional_redirect_urls = [
   "http://localhost:3000/auth/callback",
   "http://127.0.0.1:3000/auth/callback",

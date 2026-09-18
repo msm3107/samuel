@@ -29,6 +29,7 @@ vi.mock("next/headers", () => ({
 }));
 
 import { requestMagicLinkAction } from "@/lib/auth/sign-in/actions";
+import { logger } from "@/lib/logging/logger";
 import { createServiceRoleClient } from "@/lib/database/service-role-client";
 
 const SAMPLES = 8;
@@ -82,6 +83,7 @@ describe("magic-link requests against local Supabase", () => {
       timeout: 90_000,
     },
     async () => {
+      const warn = vi.spyOn(logger, "warn");
       const registered = await Promise.all(
         Array.from({ length: SAMPLES }, registeredAddress),
       );
@@ -115,6 +117,19 @@ describe("magic-link requests against local Supabase", () => {
       const ratio =
         Math.max(registeredMedian, unregisteredMedian) /
         Math.min(registeredMedian, unregisteredMedian);
+
+      // The floor is only a guarantee while real work stays under it. Any
+      // request that outlasted it would leak the original gap, so a single
+      // occurrence fails the test however close the medians look.
+      expect(
+        warn.mock.calls.filter(
+          ([entry]) =>
+            typeof entry === "object" &&
+            entry !== null &&
+            "event" in entry &&
+            entry.event === "magic_link_response_floor_exceeded",
+        ),
+      ).toEqual([]);
 
       expect(
         ratio,
