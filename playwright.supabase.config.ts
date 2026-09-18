@@ -4,8 +4,9 @@ import base from "./playwright.config";
 
 /**
  * Browser specs against the real local Supabase instead of the stub: GoTrue
- * sends real mail to Mailpit and the specs follow the link a person would. Only `*.supabase.spec.ts` files run here; they need a running
- * instance (`pnpm supabase:start`) and are started by `pnpm test:e2e:supabase`.
+ * sends real mail to Mailpit and the specs follow the link a person would.
+ * Only `*.supabase.spec.ts` files run here. They need a running instance
+ * (`pnpm supabase:start`) and are started by `pnpm test:e2e:supabase`.
  *
  * Port 3220's callback is listed in `supabase/config.toml`'s redirect allowlist.
  */

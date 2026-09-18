@@ -81,13 +81,43 @@ migration and the real-database tests).
 
 ## Limits (defaults, in one reviewed constant)
 
-| Scope                | Key                | Limit             |
-| -------------------- | ------------------ | ----------------- |
-| Magic link           | client IP          | 5 per 10 minutes  |
-| Magic link           | normalized address | 3 per 10 minutes  |
-| Magic link           | global             | 200 per hour      |
-| Google sign-in start | client IP          | 10 per 10 minutes |
-| Callback exchange    | client IP          | 20 per 10 minutes |
+| Scope                | Key                | Limit                                          |
+| -------------------- | ------------------ | ---------------------------------------------- |
+| Magic link           | client network     | 5 per 10 minutes                               |
+| Magic link           | normalized address | 3 per 10 minutes, and at least 60 s apart      |
+| Magic link           | global             | 200 per hour, then a CAPTCHA challenge + alert |
+| Google sign-in start | client network     | 10 per 10 minutes                              |
+| Callback exchange    | client network     | 20 per 10 minutes                              |
+| Session refresh      | client network     | 30 per 5 minutes (proxy, see below)            |
+
+"Client network" is the IPv4 address, or the IPv6 /64 prefix: one host can
+own a whole /64, so keying on the full IPv6 address gives an attacker 2^64
+fresh buckets.
+
+## Amendment after Codex review of PR #6 (2026-09-18)
+
+- **No hard global refusal.** A hard global cap lets a few addresses, or one
+  IPv6 /64, block every sign-in. Past the global threshold the magic-link form
+  requires a CAPTCHA (GoTrue verifies it natively), and an alert fires. Which
+  provider is a decision for the project owner (see below).
+- **Per-address spacing matches GoTrue.** Requests for one address at least
+  60 s apart, the same as `auth.email.max_frequency`, so the app never forwards
+  a request GoTrue would reject. A rejected request makes auth-js delete the
+  pending PKCE verifier, which breaks the link already sent (review finding F1).
+- **Session refreshes are limited too.** Every expired session triggers a
+  server-side refresh from the application's own IP, and GoTrue's refresh
+  limit counts per IP, so anonymous junk cookies could exhaust it for every
+  user (F2). The proxy decodes the cookie's `expires_at` locally; when a
+  refresh would be needed, it consumes a per-network refresh token first, and
+  past the limit it treats the session as unverifiable without calling GoTrue
+  and without deleting any cookie.
+- **Cleanup is named.** A `pg_cron` job created in the same migration deletes
+  rows whose window ended more than a day ago. Keys are HMACs of client
+  networks and normalized addresses, so the table's growth is bounded by those
+  distinct values within a day.
+- **Decision required before starting:** the CAPTCHA provider (Cloudflare
+  Turnstile or hCaptcha). It affects the CSP (`script-src`, `frame-src`), the
+  privacy notice (`README.md` §34), and a new secret.
 
 ## Acceptance criteria
 
@@ -106,5 +136,9 @@ migration and the real-database tests).
   platform headers only on Vercel
 - security: limited requests make zero Auth calls; per-address limit is
   indistinguishable from success; limiter failure fails closed
+- security: addresses within one IPv6 /64 share a bucket; past the global
+  threshold the form demands a CAPTCHA rather than refusing everyone
+- security: past the refresh limit, the proxy makes no GoTrue call and deletes
+  no cookie
 - supabase: atomic consumption under concurrency; window reset; anon and
   authenticated cannot execute the function or read the table

@@ -78,6 +78,26 @@ per-address and per-IP limits then cap how many samples an attacker can take.
 
 `ci.yml`, `security.yml`, `vitest.config.ts` and `lib/database/` are unchanged.
 
+### Dependency: `supabase` CLI 2.117.0 (`README.md` §56)
+
+- **Problem:** runs local Supabase (`supabase start`, `db reset`, `status`)
+  for development, the real-Supabase suites, and the `End-to-end` workflow.
+  TASK-003c's migrations need it too.
+- **Platform alternative:** a global install, which is unpinned and differs
+  per machine and in CI. Pinning it as a devDependency makes every run use the
+  same CLI.
+- **Maintenance:** Supabase, MIT licence; registry last modified 2026-09-18.
+- **Runs in the browser:** no. It is a devDependency and never enters the
+  application bundle.
+- **Permissions:** it drives the local Docker daemon (starts containers,
+  publishes ports; see the all-interfaces note under Remaining concerns). The
+  platform binary comes from lockfile-pinned optional packages
+  (`@supabase/cli-<platform>` 2.117.0) with no install-time download; the
+  wrapper's own dependencies are `jose` and `eciesjs`.
+- **Security history:** no advisory affecting this version at install time; it
+  stays under `pnpm audit` in CI.
+- **Bundle size:** none.
+
 ### `config.toml` choices
 
 - **Redirects.** `site_url` is `http://localhost:3000`. The redirect allowlist
