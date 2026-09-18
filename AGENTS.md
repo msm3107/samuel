@@ -37,19 +37,10 @@ Present:
 - structured logger with redaction (`lib/logging/`)
 - security headers and nonce-based CSP (`proxy.ts`)
 - placeholder root route and layout
-- Supabase client boundary (`lib/database/`): session, proxy-session and
-  service-role clients, with hardened (`HttpOnly`, `Secure`) session cookies
-- session resolution and route protection (`lib/auth/`, `proxy.ts`,
-  `app/(dashboard)/`): `requireSession()`, fail-closed dashboard gating
-- sign-in: magic link and Google OAuth server flow (`lib/auth/sign-in/`), PKCE
-  callback (`app/(auth)/auth/callback/`), and the `/sign-in` screen
-- Playwright end-to-end suite (`tests/e2e/`) against a stub auth server
-
-In progress: local Supabase and real-Supabase tests (TASK-003b), application
-rate limiting on sign-in (TASK-003c).
 
 Not yet present (build in the order given in `README.md` §70):
 
+- Supabase Auth integration
 - database schema, migrations, RLS policies
 - organizations, memberships, AI systems, deployments, disclosures
 - public widget and public configuration endpoint
@@ -66,8 +57,8 @@ evidence that a feature exists.
   the old filename; the behavior and position in the request path are
   unchanged.
 - `tests/unit/` exists alongside `integration/`, `security/`, and `e2e/`.
-- Playwright arrived with the first user-facing flow (TASK-003). E2E support
-  code lives beside its specs in `tests/e2e/auth/support/`.
+- Playwright is not installed. End-to-end tests and their dependency arrive
+  with the first user-facing flow, rather than sitting unused.
 
 ---
 
@@ -252,40 +243,3 @@ typecheck, lint, format, tests and production build pass; documentation is
 current; no secrets are exposed; no known critical TODO remains.
 
 "Works on my machine" is not completion.
-
----
-
-## 12. Independent reviewer handoff (Codex)
-
-Codex is the independent reviewer on pull requests. Implementation is done by
-another agent, which runs its own security, contract and accessibility passes
-before opening a PR. Your review is the check that does not share its blind
-spots.
-
-**Scope.** Review the PR diff. Do not push to the PR branch or edit files; the
-implementing agent may be working on it. Report findings as review comments.
-
-**Read first.** This file, the task contract named in the PR under
-`.ai/tasks/`, its handoff under `.ai/handoffs/`, and the phase in
-`.ai/PLAN.md`. The handoff lists what was verified, how, and what is knowingly
-left open. Do not re-report an item listed there as accepted unless you can
-show it is worse than stated.
-
-**Look hardest at:**
-
-- identity from anything other than the validated session (`requireSession()`)
-- tenant isolation and RLS, once schema exists
-- anything reaching the browser: secrets, reflected input, CSP or nonce gaps
-- the service-role client used where a session client would do
-- fail-open paths: errors, timeouts, malformed third-party responses
-- tests that cannot fail, or that were weakened to pass
-- scope: files changed outside the contract's allowed list without an
-  amendment
-
-**Each finding states** severity (blocking or non-blocking), file and line, a
-concrete failure or attack scenario, and the evidence: the code path, a command
-you ran, or library source you read. Say plainly when something is uncertain.
-Style preferences are not findings.
-
-**Verdict:** `APPROVE`, `APPROVE WITH NON-BLOCKING NOTES`, or `REJECT`. The
-project owner merges; neither agent approves its own work.
