@@ -290,12 +290,16 @@ max_frequency = "5s"
 # [auth.sms.test_otp]
 # 4152127777 = "123456"
 
-# Configure logged in session timeouts.
-# [auth.sessions]
+# Session lifetime (TASK-003e). GoTrue enforces both on every refresh and every
+# authenticated request. Idle time counts from the last token refresh. The
+# session cookie's maximum age is capped to match in
+# lib/database/session-cookie-options.ts. Production must set the same values
+# on the hosted project.
+[auth.sessions]
 # Force log out after the specified duration.
-# timebox = "24h"
+timebox = "168h"
 # Force log out if the user has been inactive longer than the specified duration.
-# inactivity_timeout = "8h"
+inactivity_timeout = "24h"
 
 # This hook runs before a new user is created and allows developers to reject the request based on the incoming user object.
 # [auth.hook.before_user_created]

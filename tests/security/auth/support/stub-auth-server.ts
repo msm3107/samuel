@@ -53,7 +53,12 @@ type AuthServerBehaviour =
    * `/user` with 403 `session_not_found` on a versioned API response, which
    * auth-js maps to AuthSessionMissingError and clears the session.
    */
-  | { mode: "revoked" };
+  | { mode: "revoked" }
+  /**
+   * The session is past its absolute or idle limit (TASK-003e). GoTrue answers
+   * `/user` with 403 and a refresh with 400, both `session_expired`.
+   */
+  | { mode: "session-expired" };
 
 export type RecordedAuthRequest = {
   method: string;
@@ -162,6 +167,19 @@ export function installStubAuthServer(behaviour: AuthServerBehaviour) {
             msg: "Session from session_id claim in JWT does not exist",
           },
           403,
+        );
+      }
+
+      if (behaviour.mode === "session-expired") {
+        const refreshing = url.pathname === "/auth/v1/token";
+        return json(
+          {
+            code: "session_expired",
+            msg: refreshing
+              ? "Invalid Refresh Token: Session Expired"
+              : "Session is no longer valid",
+          },
+          refreshing ? 400 : 403,
         );
       }
 
