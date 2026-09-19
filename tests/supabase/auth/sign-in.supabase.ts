@@ -229,10 +229,15 @@ describe("sign-in against local Supabase", () => {
     expect(refreshed.length).toBeGreaterThan(0);
     expect(refreshed.every((cookie) => /HttpOnly/i.test(cookie))).toBe(true);
     // Kept no longer than the auth server's 7-day session limit (TASK-003e),
-    // not the library's 400 days.
-    expect(
-      refreshed.every((cookie) => /Max-Age=604800(;|$)/i.test(cookie)),
-    ).toBe(true);
+    // not the library's 400 days. Removals of chunks the new session no longer
+    // needs (Max-Age=0) are not writes, so they are left out.
+    const written = refreshed.filter(
+      (cookie) => !/Max-Age=0(;|$)/i.test(cookie),
+    );
+    expect(written.length).toBeGreaterThan(0);
+    expect(written.every((cookie) => /Max-Age=604800(;|$)/i.test(cookie))).toBe(
+      true,
+    );
     expect(response.headers.get("x-middleware-request-cookie")).not.toContain(
       cookieHeader,
     );
