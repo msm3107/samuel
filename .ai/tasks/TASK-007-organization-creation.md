@@ -12,7 +12,9 @@ Backend, then Testing
 
 ## Dependencies
 
-TASK-004, TASK-005, TASK-006.
+TASK-004, TASK-005, TASK-006, and TASK-003i: this is the first route handler
+that resolves a session, and without 003i an auth-server 429 during its
+session refresh would delete the person's session (review finding F2).
 
 ## Allowed files
 

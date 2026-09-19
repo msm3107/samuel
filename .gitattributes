@@ -1,0 +1,10 @@
+# Line endings are normalized to LF in the repository and the working tree.
+# Mixed endings made small edits show as whole-file rewrites in review
+# (TASK-003g).
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary

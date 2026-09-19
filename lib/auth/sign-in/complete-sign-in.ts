@@ -12,6 +12,7 @@ import { createSessionClient } from "@/lib/database/session-client";
 import { logger } from "@/lib/logging/logger";
 import {
   consumeRateLimit,
+  GLOBAL,
   RateLimitUnavailableError,
 } from "@/lib/security/rate-limit";
 
@@ -89,6 +90,16 @@ export async function completeSignIn(params: {
     if (!(await consumeRateLimit("callbackNetwork", params.network))) {
       logger.warn({ event: "rate_limited", limit: "callbackNetwork" });
       return failed("rate_limited");
+    }
+    // Service-wide, so exchanges from many networks cannot spend the GoTrue
+    // bucket real users' refreshes need (TASK-003g). Not the visitor's doing,
+    // so not "rate_limited", which names their network.
+    if (!(await consumeRateLimit("callbackGlobal", GLOBAL))) {
+      // Once per window, so the attacker does not decide the error volume.
+      if (await consumeRateLimit("callbackCeilingAlert", GLOBAL)) {
+        logger.error({ event: "callback_global_ceiling_reached" });
+      }
+      return failed("sign_in_unavailable");
     }
   } catch (error) {
     if (!(error instanceof RateLimitUnavailableError)) {

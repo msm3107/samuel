@@ -22,8 +22,10 @@ export type MagicLinkGate =
  * account, so answering at once reveals nothing. Answering at once also means
  * a flood of refused requests does not hold connections open for the floor.
  *
- * Order matters: the per-network limit comes first, so one network cannot
- * spend the global allowance or make this application call Cloudflare.
+ * Order matters: the per-network cap and limit come first, so one network
+ * cannot spend the global allowance. Past the per-network limit or the global
+ * threshold, a request needs a Turnstile challenge; past the per-network cap,
+ * it is refused (TASK-003g).
  */
 export async function checkMagicLinkGate(input: {
   email: unknown;
@@ -36,12 +38,23 @@ export async function checkMagicLinkGate(input: {
   }
 
   try {
-    if (!(await consumeRateLimit("magicLinkNetwork", input.network))) {
-      logger.warn({ event: "rate_limited", limit: "magicLinkNetwork" });
+    if (!(await consumeRateLimit("magicLinkNetworkCap", input.network))) {
+      logger.warn({ event: "rate_limited", limit: "magicLinkNetworkCap" });
       return refused("rate_limited");
     }
 
+    // A busy shared network (an office, a mobile carrier) is asked for the
+    // challenge, not refused; it spends none of the global allowance.
+    if (!(await consumeRateLimit("magicLinkNetwork", input.network))) {
+      return await challenge(input.captchaToken, email);
+    }
+
     if (!(await consumeRateLimit("magicLinkGlobal", GLOBAL))) {
+      // For alerting (Phase 12): sustained, this is an attack or a surge.
+      // Once per window, so the attacker does not decide the error volume.
+      if (await consumeRateLimit("magicLinkThresholdAlert", GLOBAL)) {
+        logger.error({ event: "magic_link_global_threshold_exceeded" });
+      }
       return await challenge(input.captchaToken, email);
     }
   } catch (error) {
@@ -52,17 +65,14 @@ export async function checkMagicLinkGate(input: {
 }
 
 /**
- * Past the global threshold, a request goes ahead only with a Turnstile token
- * Cloudflare accepts. Nobody is refused outright, so a flood cannot lock
- * everyone out; it only makes everyone solve a challenge.
+ * Past the per-network limit or the global threshold, a request goes ahead
+ * only with a Turnstile token Cloudflare accepts. Nobody is refused outright,
+ * so a flood cannot lock everyone out; it only makes them solve a challenge.
  */
 async function challenge(
   captchaToken: unknown,
   email: string,
 ): Promise<MagicLinkGate> {
-  // For alerting (Phase 12): sustained, this is an attack or a surge.
-  logger.error({ event: "magic_link_global_threshold_exceeded" });
-
   if (
     captchaToken === null ||
     captchaToken === undefined ||

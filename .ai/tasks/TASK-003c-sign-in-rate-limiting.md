@@ -173,7 +173,8 @@ The project owner chose **Cloudflare Turnstile**.
   per-address allowance (3 links per 10 minutes, each a real email to that
   address) and so hold back that person's magic links for up to 10 minutes.
   Google sign-in stays available. Per-address limit hits are logged, without
-  the address, for alerting in Phase 12.
+  the address, for alerting in Phase 12. Accepted by msm3107 (project owner),
+  2026-09-19.
 - **Residual risk, recorded (2026-09-19):** a per-address-limited request
   answers `link_sent` inside the same floor, but it starts no PKCE flow, so
   its response sets no verifier cookie where a sent link's does. Someone who
@@ -182,7 +183,7 @@ The project owner chose **Cloudflare Turnstile**.
   exists (unregistered addresses get links too). A convincing decoy cookie
   would have to rewrite auth-js's flow index, which can evict the slot of a
   link that is really pending: the very thing the per-address limit protects
-  (review finding F1). The project owner may decide otherwise.
+  (review finding F1). Accepted by msm3107 (project owner), 2026-09-19.
 - **The session-refresh limit moves to TASK-003f.** It changes the proxy and
   is reviewed separately. Its tests move with it.
 

@@ -21,9 +21,19 @@ type RateLimit = {
  * values come from `clientNetwork` (an IPv4 address or an IPv6 /64).
  */
 export const RATE_LIMITS = {
+  // Past this, a network is asked for the Turnstile challenge rather than
+  // refused: offices and mobile carriers put many people behind one address
+  // (project owner, 2026-09-19; TASK-003g).
   magicLinkNetwork: {
     scope: "magic_link:network",
     limit: 5,
+    windowSeconds: 10 * 60,
+    minIntervalSeconds: 0,
+  },
+  // Past this, the network is refused, challenge or not.
+  magicLinkNetworkCap: {
+    scope: "magic_link:network_cap",
+    limit: 30,
     windowSeconds: 10 * 60,
     minIntervalSeconds: 0,
   },
@@ -44,16 +54,42 @@ export const RATE_LIMITS = {
     windowSeconds: 60 * 60,
     minIntervalSeconds: 0,
   },
+  // Bounds the error-level log past the global threshold to one entry per
+  // window, so an attacker cannot fill the error log.
+  magicLinkThresholdAlert: {
+    scope: "magic_link:threshold_alert",
+    limit: 1,
+    windowSeconds: 5 * 60,
+    minIntervalSeconds: 0,
+  },
+  // Redirects cannot show a challenge, so these match the magic link's cap.
   googleStartNetwork: {
     scope: "google_start:network",
-    limit: 10,
+    limit: 30,
     windowSeconds: 10 * 60,
     minIntervalSeconds: 0,
   },
   callbackNetwork: {
     scope: "callback:network",
-    limit: 20,
+    limit: 60,
     windowSeconds: 10 * 60,
+    minIntervalSeconds: 0,
+  },
+  // GoTrue counts code exchanges, refreshes and password grants in one bucket
+  // per client IP (`limiterOpts.Token`, 150 per 5 minutes by default), and
+  // they all come from this application's servers. Per-network limits have
+  // no total, so this and sessionRefreshGlobal (100) keep the sum under 150:
+  // many networks cannot spend the bucket and have real refreshes refused.
+  callbackGlobal: {
+    scope: "callback:global",
+    limit: 40,
+    windowSeconds: 5 * 60,
+    minIntervalSeconds: 0,
+  },
+  callbackCeilingAlert: {
+    scope: "callback:ceiling_alert",
+    limit: 1,
+    windowSeconds: 5 * 60,
     minIntervalSeconds: 0,
   },
   // Consumed by the proxy (TASK-003f).
@@ -66,6 +102,12 @@ export const RATE_LIMITS = {
 } as const satisfies Record<string, RateLimit>;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;
+
+/**
+ * A limiter that hangs must not hold every sign-in open: past this, the call
+ * is abandoned and the request refused as unavailable.
+ */
+export const RATE_LIMIT_TIMEOUT_MS = 2000;
 
 /** The value every request shares in a global limit. */
 export const GLOBAL = "global";
@@ -111,12 +153,14 @@ export async function consumeRateLimit(
 
   let response: { data: unknown; error: unknown };
   try {
-    response = await createServiceRoleClient().rpc("consume_rate_limit", {
-      p_key: rateLimitKey(scope, value),
-      p_limit: limit,
-      p_window_seconds: windowSeconds,
-      p_min_interval_seconds: minIntervalSeconds,
-    });
+    response = await createServiceRoleClient()
+      .rpc("consume_rate_limit", {
+        p_key: rateLimitKey(scope, value),
+        p_limit: limit,
+        p_window_seconds: windowSeconds,
+        p_min_interval_seconds: minIntervalSeconds,
+      })
+      .abortSignal(AbortSignal.timeout(RATE_LIMIT_TIMEOUT_MS));
   } catch (error) {
     throw new RateLimitUnavailableError(`rate limit ${name} unavailable`, {
       cause: error,

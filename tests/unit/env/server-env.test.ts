@@ -64,8 +64,30 @@ describe("parseServerEnv", () => {
 
   describe("in production", () => {
     function production(overrides: Record<string, string>) {
-      return { ...validEnv(), NODE_ENV: "production", ...overrides };
+      return {
+        ...validEnv(),
+        NODE_ENV: "production",
+        VERCEL: "1",
+        ...overrides,
+      };
     }
+
+    it("requires VERCEL=1 off loopback, or every visitor shares one rate-limit bucket", () => {
+      const source: Record<string, string> = production({});
+      delete source.VERCEL;
+      expect(() => parseServerEnv(source)).toThrow(InvalidEnvironmentError);
+      expect(() => parseServerEnv(production({ VERCEL: "0" }))).toThrow(
+        InvalidEnvironmentError,
+      );
+    });
+
+    it("does not require VERCEL on loopback, where the local suites run", () => {
+      const source: Record<string, string> = production({
+        NEXT_PUBLIC_APP_URL: "http://localhost:3210",
+      });
+      delete source.VERCEL;
+      expect(() => parseServerEnv(source)).not.toThrow();
+    });
 
     it.each(["SUPABASE_URL", "NEXT_PUBLIC_APP_URL"])(
       "rejects a plain-http %s, which would carry keys and tokens in the clear",

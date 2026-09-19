@@ -168,7 +168,8 @@ function spyOnLogger() {
 }
 
 describe("security: magic-link requests over a limit never reach Supabase Auth", () => {
-  it("refuses a network over its limit at once, without the response floor", async () => {
+  it("asks a busy network for the challenge instead of refusing it, without the floor", async () => {
+    // Offices and mobile carriers share one address (TASK-003g).
     const { requests, rateLimitCalls } = installServer({
       rateLimit: refusing(key("magicLinkNetwork", LOCAL_NETWORK)),
     });
@@ -177,12 +178,58 @@ describe("security: magic-link requests over a limit never reach Supabase Auth",
       requestMagicLinkAction(null, form({ email: EMAIL })),
     );
 
-    expect(result).toEqual({ result: "rate_limited" });
+    expect(result).toEqual({ result: "captcha_required" });
     expect(authRequests(requests)).toEqual([]);
     expect(elapsedMs).toBeLessThan(WITHOUT_FLOOR_MS);
-    // Checked first: a refused network spends no global allowance.
+    // A busy network spends none of the global allowance.
     expect(rateLimitCalls.map((call) => call.key)).toEqual([
+      key("magicLinkNetworkCap", LOCAL_NETWORK),
       key("magicLinkNetwork", LOCAL_NETWORK),
+    ]);
+  });
+
+  it("lets a busy network through with a solved challenge", async () => {
+    const { requests } = installServer({
+      rateLimit: refusing(key("magicLinkNetwork", LOCAL_NETWORK)),
+    });
+    stubSiteverify(TEST_KEY_PASS);
+
+    const { result } = await timed(() =>
+      requestMagicLinkAction(
+        null,
+        form({
+          email: EMAIL,
+          [TURNSTILE_RESPONSE_FIELD]: "XXXX.DUMMY.TOKEN.XXXX",
+        }),
+      ),
+    );
+
+    expect(result).toEqual({ result: "link_sent" });
+    expect(authRequests(requests)).toHaveLength(1);
+  });
+
+  it("refuses a network past its cap at once, even with a solved challenge", async () => {
+    const { requests, rateLimitCalls } = installServer({
+      rateLimit: refusing(key("magicLinkNetworkCap", LOCAL_NETWORK)),
+    });
+    const siteverify = stubSiteverify(TEST_KEY_PASS);
+
+    const { result, elapsedMs } = await timed(() =>
+      requestMagicLinkAction(
+        null,
+        form({
+          email: EMAIL,
+          [TURNSTILE_RESPONSE_FIELD]: "XXXX.DUMMY.TOKEN.XXXX",
+        }),
+      ),
+    );
+
+    expect(result).toEqual({ result: "rate_limited" });
+    expect(authRequests(requests)).toEqual([]);
+    expect(siteverify).toEqual([]);
+    expect(elapsedMs).toBeLessThan(WITHOUT_FLOOR_MS);
+    expect(rateLimitCalls.map((call) => call.key)).toEqual([
+      key("magicLinkNetworkCap", LOCAL_NETWORK),
     ]);
   });
 
@@ -225,6 +272,7 @@ describe("security: magic-link requests over a limit never reach Supabase Auth",
     await requestMagicLinkAction(null, form({ email: EMAIL }));
 
     expect(rateLimitCalls.slice(1).map((call) => call.key)).toEqual([
+      key("magicLinkNetworkCap", LOCAL_NETWORK),
       key("magicLinkNetwork", LOCAL_NETWORK),
       key("magicLinkGlobal", GLOBAL),
       key("magicLinkAddress", EMAIL),
@@ -325,6 +373,22 @@ describe("security: Google sign-in and the callback are limited per network", ()
     );
   });
 
+  it("refuses the callback past the service-wide ceiling without calling GoTrue", async () => {
+    const { requests } = installServer({
+      rateLimit: refusing(key("callbackGlobal", GLOBAL)),
+    });
+
+    const response = await callback(
+      new NextRequest(`http://localhost:3000/auth/callback?code=${AUTH_CODE}`),
+    );
+
+    // Not the visitor's network, so not "rate_limited".
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3000/sign-in?error=sign_in_unavailable",
+    );
+    expect(authRequests(requests)).toEqual([]);
+  });
+
   it("refuses the callback exchange over the limit", async () => {
     const { requests } = installServer({
       rateLimit: refusing(key("callbackNetwork", LOCAL_NETWORK)),
@@ -364,7 +428,7 @@ describe("security: client networks", () => {
     await requestMagicLinkAction(null, form({ email: EMAIL }));
 
     const [first, second, third] = rateLimitCalls.map((call) => call.key);
-    expect(first).toBe(key("magicLinkNetwork", "2001:db8:1:2::/64"));
+    expect(first).toBe(key("magicLinkNetworkCap", "2001:db8:1:2::/64"));
     expect(second).toBe(first);
     expect(third).not.toBe(first);
   });
@@ -374,7 +438,9 @@ describe("security: client networks", () => {
 
     await requestMagicLinkAction(null, form({ email: EMAIL }));
 
-    expect(rateLimitCalls[0]?.key).toBe(key("magicLinkNetwork", LOCAL_NETWORK));
+    expect(rateLimitCalls[0]?.key).toBe(
+      key("magicLinkNetworkCap", LOCAL_NETWORK),
+    );
   });
 
   it("sends only digests to the database and logs no address or IP", async () => {
@@ -485,14 +551,31 @@ describe("security: past the global threshold, a challenge rather than a refusal
     expect(siteverify).toEqual([]);
   });
 
-  it("raises an alert-level log past the threshold", async () => {
-    installServer({ rateLimit: overThreshold });
+  it("raises the alert-level log once per window, not once per request", async () => {
+    const alertKey = key("magicLinkThresholdAlert", GLOBAL);
+    let alertAllowed = true;
+    installServer({
+      rateLimit: (call) => {
+        if (call.key === alertKey) {
+          const allowed = alertAllowed;
+          alertAllowed = false;
+          return allowed;
+        }
+        return overThreshold(call);
+      },
+    });
     const error = vi.spyOn(logger, "error");
 
-    await requestMagicLinkAction(null, form({ email: EMAIL }));
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await requestMagicLinkAction(null, form({ email: EMAIL }));
+    }
 
-    expect(error).toHaveBeenCalledWith({
-      event: "magic_link_global_threshold_exceeded",
-    });
+    expect(
+      error.mock.calls.filter(
+        ([entry]) =>
+          (entry as { event?: string }).event ===
+          "magic_link_global_threshold_exceeded",
+      ),
+    ).toHaveLength(1);
   });
 });
