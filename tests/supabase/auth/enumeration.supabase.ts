@@ -10,9 +10,13 @@ import { countMessagesTo } from "@/tests/supabase/support/mailpit";
  * Registered and unregistered addresses must get the same result code, and
  * their response times must not separate cleanly.
  *
- * Timed through the server action, which is what a visitor's request reaches.
- * GoTrue alone answers a registered address about three times faster than an
- * unregistered one; the action's response floor is what closes that gap.
+ * Timed through what the server action runs once its gate has passed: the
+ * response floor around `requestMagicLink`. GoTrue alone answers a registered
+ * address about three times faster than an unregistered one; the floor is what
+ * closes that gap. The gate before it (format, per-network limit, global
+ * threshold) never looks at whether an address has an account, and going
+ * through it here would spend the shared local network's allowance of 5
+ * requests per 10 minutes (TASK-003c).
  */
 
 const jar = vi.hoisted(() => new Map<string, string>());
@@ -28,7 +32,8 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
-import { requestMagicLinkAction } from "@/lib/auth/sign-in/actions";
+import { requestMagicLink } from "@/lib/auth/sign-in/request-magic-link";
+import { withResponseFloor } from "@/lib/auth/sign-in/response-floor";
 import { logger } from "@/lib/logging/logger";
 import { createServiceRoleClient } from "@/lib/database/service-role-client";
 
@@ -60,11 +65,9 @@ async function registeredAddress() {
 
 async function timedRequest(email: string) {
   jar.clear();
-  const form = new FormData();
-  form.set("email", email);
   const started = performance.now();
-  const state = await requestMagicLinkAction(null, form);
-  return { email, result: state?.result, ms: performance.now() - started };
+  const result = await withResponseFloor(() => requestMagicLink(email));
+  return { email, result, ms: performance.now() - started };
 }
 
 function median(values: number[]) {

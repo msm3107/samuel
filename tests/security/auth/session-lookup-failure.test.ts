@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The sign-in path now reaches the rate limiter, a server-only module.
+vi.mock("server-only", () => ({}));
+
 import DashboardLayout from "@/app/(dashboard)/layout";
 import { AuthenticationError, SessionLookupError } from "@/lib/auth/errors";
 import { requireSession } from "@/lib/auth/require-session";

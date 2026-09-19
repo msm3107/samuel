@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { callbackErrorMessage } from "@/app/(auth)/sign-in/sign-in-messages";
 import { GoogleSignInForm } from "@/components/forms/google-sign-in-form";
 import { MagicLinkForm } from "@/components/forms/magic-link-form";
+import { serverEnv } from "@/lib/env/server-env";
 
 export const metadata: Metadata = {
   title: "Sign in · Article50.js",
@@ -36,6 +37,7 @@ export default async function SignInPage({
       </p>
 
       <MagicLinkForm
+        turnstileSiteKey={serverEnv().TURNSTILE_SITE_KEY}
         {...(callbackError === undefined ? {} : { callbackError })}
       />
 

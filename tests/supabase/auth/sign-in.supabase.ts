@@ -141,7 +141,7 @@ describe("sign-in against local Supabase", () => {
     const link = await waitForMagicLink(address);
 
     // The person clicks "Continue with Google", then backs out.
-    const google = await startGoogleSignIn();
+    const google = await startGoogleSignIn("198.51.100.1");
     expect(google.status).toBe("redirect");
 
     const callbackLocation = await openVerifyLink(link);
@@ -150,6 +150,29 @@ describe("sign-in against local Supabase", () => {
     );
     const response = await callback(new NextRequest(callbackLocation));
 
+    expect(response.headers.get("location")).toBe(
+      `${serverEnv().NEXT_PUBLIC_APP_URL}/dashboard`,
+    );
+    await expect(requireSession()).resolves.toEqual({
+      userId: await userIdFor(address),
+    });
+  });
+
+  it("keeps the first link working when the same address asks again within 60 s", async () => {
+    // TASK-003c. Real GoTrue binds an emailed link to the address's newest
+    // flow state even when it sends no second email, so a second request made
+    // the only link fail with bad_code_verifier (observed in CI on PR #8).
+    // The per-address spacing answers the second request itself, without
+    // calling GoTrue.
+    const address = freshAddress();
+    await expect(requestMagicLink(address)).resolves.toBe("link_sent");
+    const link = await waitForMagicLink(address);
+
+    await expect(requestMagicLink(address)).resolves.toBe("link_sent");
+
+    const response = await callback(
+      new NextRequest(await openVerifyLink(link)),
+    );
     expect(response.headers.get("location")).toBe(
       `${serverEnv().NEXT_PUBLIC_APP_URL}/dashboard`,
     );
@@ -229,10 +252,15 @@ describe("sign-in against local Supabase", () => {
     expect(refreshed.length).toBeGreaterThan(0);
     expect(refreshed.every((cookie) => /HttpOnly/i.test(cookie))).toBe(true);
     // Kept no longer than the auth server's 7-day session limit (TASK-003e),
-    // not the library's 400 days.
-    expect(
-      refreshed.every((cookie) => /Max-Age=604800(;|$)/i.test(cookie)),
-    ).toBe(true);
+    // not the library's 400 days. Removals of chunks the new session no longer
+    // needs (Max-Age=0) are not writes, so they are left out.
+    const written = refreshed.filter(
+      (cookie) => !/Max-Age=0(;|$)/i.test(cookie),
+    );
+    expect(written.length).toBeGreaterThan(0);
+    expect(written.every((cookie) => /Max-Age=604800(;|$)/i.test(cookie))).toBe(
+      true,
+    );
     expect(response.headers.get("x-middleware-request-cookie")).not.toContain(
       cookieHeader,
     );

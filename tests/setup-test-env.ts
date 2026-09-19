@@ -11,6 +11,10 @@ const TEST_ENV: Readonly<Record<string, string>> = {
   STRIPE_SECRET_KEY: "sk_test_placeholder",
   STRIPE_WEBHOOK_SECRET: "whsec_test_placeholder",
   CRON_SECRET: "test-cron-secret-value-that-is-long-enough",
+  RATE_LIMIT_HMAC_SECRET: "test-rate-limit-secret-long-enough-for-hmac",
+  // Cloudflare's always-pass test keys.
+  TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
+  TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",
   LOG_LEVEL: "error",
 };
 

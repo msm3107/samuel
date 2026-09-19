@@ -31,7 +31,22 @@ export default defineConfig({
     baseURL: BASE_URL,
     trace: "on-first-retry",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+      // Replaces the top-level testIgnore, so both patterns are listed.
+      testIgnore: ["**/*.supabase.spec.ts", "**/*.challenge.spec.ts"],
+    },
+    {
+      // Puts the stub past the global magic-link threshold, which would
+      // change every other spec's answers, so it runs only after they finish.
+      name: "challenge",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: "**/*.challenge.spec.ts",
+      dependencies: ["chromium"],
+    },
+  ],
   webServer: {
     command: `node tests/e2e/auth/support/start-e2e-app.mjs ${PORT}`,
     url: BASE_URL,

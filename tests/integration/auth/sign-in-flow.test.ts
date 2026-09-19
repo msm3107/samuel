@@ -7,6 +7,9 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// The sign-in path now reaches the rate limiter, a server-only module.
+vi.mock("server-only", () => ({}));
+
 import {
   installStubAuthServer,
   proxyRequest,
@@ -216,7 +219,7 @@ describe("Google sign-in", () => {
   it("signs a person in through Google start, callback route, and requireSession()", async () => {
     const { requests } = installFlowServer({ [GOOGLE_CODE_A]: USER_A });
 
-    const started = await startGoogleSignIn();
+    const started = await startGoogleSignIn("198.51.100.1");
 
     expect(started.status).toBe("redirect");
     const providerUrl = new URL(

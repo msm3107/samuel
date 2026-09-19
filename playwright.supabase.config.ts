@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 
 import base from "./playwright.config";
 
@@ -17,6 +17,10 @@ export default defineConfig({
   ...base,
   testMatch: "**/*.supabase.spec.ts",
   testIgnore: [],
+  // Replaces the base projects: their own testMatch and testIgnore would win
+  // over the two lines above, dropping this config's specs and running the
+  // stub-only challenge spec instead.
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   // One mailbox, one auth server, and GoTrue's own rate limits: run in turn.
   fullyParallel: false,
   workers: 1,

@@ -13,6 +13,9 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// The sign-in path now reaches the rate limiter, a server-only module.
+vi.mock("server-only", () => ({}));
+
 /**
  * A cookie jar that behaves like a route handler's `next/headers` store:
  * writes are applied, so the PKCE verifier stored when a flow starts is there
@@ -284,7 +287,7 @@ describe("callback completes a sign-in started in this browser", () => {
 
   it("redirects a Google code with its verifier to the dashboard and writes the session", async () => {
     installFlowServer({ [CODE_VICTIM]: USER_A });
-    await expect(startGoogleSignIn()).resolves.toMatchObject({
+    await expect(startGoogleSignIn("198.51.100.1")).resolves.toMatchObject({
       status: "redirect",
     });
     expect(jar.has(verifierCookieName())).toBe(true);

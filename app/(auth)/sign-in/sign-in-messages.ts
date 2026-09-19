@@ -9,6 +9,11 @@ import {
  * never built from a query parameter or an auth-server message, so nothing a
  * visitor puts in the URL can reach the page.
  */
+// Names the network, never an address: it is the only thing a per-network
+// limit says anything about.
+const RATE_LIMITED =
+  "Too many sign-in attempts from your network. Wait a few minutes, then try again.";
+
 const CALLBACK_MESSAGES: Record<CallbackErrorCode, string> = {
   link_invalid: "That sign-in link is not valid. Request a new one below.",
   link_expired: "That sign-in link has expired. Request a new one below.",
@@ -17,6 +22,7 @@ const CALLBACK_MESSAGES: Record<CallbackErrorCode, string> = {
   sign_in_failed: "Sign-in did not complete. Try again below.",
   sign_in_unavailable:
     "Sign-in is unavailable right now. Please try again in a few minutes.",
+  rate_limited: RATE_LIMITED,
 };
 
 const GENERIC_ERROR = "Sign-in did not complete. Try again below.";
@@ -49,6 +55,15 @@ const MAGIC_LINK_MESSAGES: Record<
   unavailable: {
     tone: "problem",
     text: "Sign-in is unavailable right now. Please try again in a few minutes.",
+  },
+  rate_limited: { tone: "problem", text: RATE_LIMITED },
+  captcha_required: {
+    tone: "problem",
+    text: "Sign-in is busy right now. Complete the security check, then request your link again.",
+  },
+  captcha_failed: {
+    tone: "problem",
+    text: "The security check did not succeed. Complete it again, then request your link.",
   },
 };
 

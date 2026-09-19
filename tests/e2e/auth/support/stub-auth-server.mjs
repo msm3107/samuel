@@ -3,7 +3,10 @@
 // implements only what auth-js needs, and cannot tell a registered address from
 // an unregistered one — so it proves the screen's behaviour, not GoTrue's.
 // TASK-003b points these specs at real local Supabase.
+import { createHmac } from "node:crypto";
 import { createServer } from "node:http";
+
+import { E2E_RATE_LIMIT_HMAC_SECRET } from "./e2e-env.mjs";
 
 const PORT = Number(process.argv[2] ?? 54400);
 
@@ -37,6 +40,18 @@ const user = {
  */
 const usedFlows = new Set();
 
+/**
+ * The application's rate-limit database call (TASK-003c). Every hit is
+ * allowed, except that the global magic-link bucket can be reported full, so
+ * the challenge spec can drive the form past the threshold. The key is the
+ * application's own HMAC of "magic_link:global:global"
+ * (lib/security/rate-limit.ts).
+ */
+const GLOBAL_MAGIC_LINK_KEY = createHmac("sha256", E2E_RATE_LIMIT_HMAC_SECRET)
+  .update("magic_link:global:global")
+  .digest("hex");
+let overGlobalThreshold = false;
+
 function send(response, status, body) {
   response.writeHead(status, {
     "content-type": "application/json",
@@ -65,6 +80,26 @@ createServer(async (request, response) => {
   if (url.pathname === "/__health") {
     response.writeHead(200, { "content-type": "text/plain" });
     return response.end("e2e-stub-auth-server");
+  }
+
+  // Test-only control, never part of Supabase's API: set by the challenge
+  // spec, which runs after every other spec (playwright.config.ts).
+  if (request.method === "POST" && url.pathname === "/__control/threshold") {
+    const body = await readBody(request);
+    overGlobalThreshold = body.over === true;
+    return send(response, 200, { over: overGlobalThreshold });
+  }
+
+  if (
+    request.method === "POST" &&
+    url.pathname === "/rest/v1/rpc/consume_rate_limit"
+  ) {
+    const body = await readBody(request);
+    return send(
+      response,
+      200,
+      !(overGlobalThreshold && body.p_key === GLOBAL_MAGIC_LINK_KEY),
+    );
   }
 
   if (request.method === "GET" && url.pathname === "/auth/v1/user") {

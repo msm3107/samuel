@@ -11,11 +11,22 @@ import { logger } from "@/lib/logging/logger";
 const NONCE_HEADER = "x-nonce";
 
 /**
+ * Cloudflare Turnstile's challenge runs in a frame from this origin. Only the
+ * sign-in page may embed it (TASK-003c); its script needs no `script-src`
+ * entry, because the application's own nonce-trusted code inserts it and
+ * 'strict-dynamic' extends trust to scripts inserted that way.
+ */
+const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
+
+/**
  * Next.js injects inline bootstrap scripts, so a `script-src 'self'` policy
  * cannot be used verbatim. A per-request nonce plus 'strict-dynamic' keeps the
  * policy as strict as rule 13 intends while letting the framework boot.
  */
-function buildContentSecurityPolicy(nonce: string) {
+function buildContentSecurityPolicy(
+  nonce: string,
+  { allowTurnstile }: { allowTurnstile: boolean },
+) {
   const scriptSources = [
     "'self'",
     `'nonce-${nonce}'`,
@@ -31,6 +42,7 @@ function buildContentSecurityPolicy(nonce: string) {
     "img-src 'self' data:",
     "font-src 'self'",
     "connect-src 'self'",
+    allowTurnstile ? `frame-src ${TURNSTILE_ORIGIN}` : "",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -149,7 +161,9 @@ function sessionUnavailable(error: SessionLookupError) {
 
 export default async function proxy(request: NextRequest) {
   const nonce = crypto.randomUUID().replaceAll("-", "");
-  const contentSecurityPolicy = buildContentSecurityPolicy(nonce);
+  const contentSecurityPolicy = buildContentSecurityPolicy(nonce, {
+    allowTurnstile: request.nextUrl.pathname === SIGN_IN_PATH,
+  });
 
   // Must run before request.headers is copied below: a token refresh rewrites
   // the request's cookies, and server components must receive the new ones.

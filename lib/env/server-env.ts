@@ -10,6 +10,24 @@ const LOOPBACK_HOSTS: ReadonlySet<string> = new Set([
   "[::1]",
 ]);
 
+/**
+ * Cloudflare's published Turnstile test keys
+ * (developers.cloudflare.com/turnstile/troubleshooting/testing/).
+ */
+export const TURNSTILE_TEST_SITE_KEYS: ReadonlySet<string> = new Set([
+  "1x00000000000000000000AA",
+  "2x00000000000000000000AB",
+  "1x00000000000000000000BB",
+  "2x00000000000000000000BB",
+  "3x00000000000000000000FF",
+]);
+
+export const TURNSTILE_TEST_SECRET_KEYS: ReadonlySet<string> = new Set([
+  "1x0000000000000000000000000000000AA",
+  "2x0000000000000000000000000000000AA",
+  "3x0000000000000000000000000000000AA",
+]);
+
 const serverEnvSchema = z
   .object({
     NODE_ENV: z
@@ -35,6 +53,19 @@ const serverEnvSchema = z
     // the length floor is enforced as configuration rather than convention.
     CRON_SECRET: z.string().min(32),
 
+    // Keys the sign-in rate-limit buckets (lib/security/rate-limit.ts), so the
+    // database holds digests, never an email or IP address.
+    RATE_LIMIT_HMAC_SECRET: z.string().min(32),
+
+    // Cloudflare Turnstile, shown on the sign-in form only past the global
+    // magic-link threshold. The site key is public; the secret is not.
+    TURNSTILE_SITE_KEY: z.string().min(1),
+    TURNSTILE_SECRET_KEY: z.string().min(1),
+
+    // Set to "1" by Vercel. Client IPs are trusted from platform headers only
+    // when it is (lib/security/client-ip.ts).
+    VERCEL: z.string().optional(),
+
     SENTRY_DSN: z.url().optional(),
 
     LOG_LEVEL: z.enum(logLevels).default("info"),
@@ -53,6 +84,24 @@ const serverEnvSchema = z
           code: "custom",
           path: [name],
           message: "must use https in production",
+        });
+      }
+    }
+    // Cloudflare's published test keys pass every challenge. The local
+    // production-build suites use them, on loopback only.
+    if (!LOOPBACK_HOSTS.has(new URL(env.NEXT_PUBLIC_APP_URL).hostname)) {
+      if (TURNSTILE_TEST_SITE_KEYS.has(env.TURNSTILE_SITE_KEY)) {
+        context.addIssue({
+          code: "custom",
+          path: ["TURNSTILE_SITE_KEY"],
+          message: "must not be a Turnstile test key in production",
+        });
+      }
+      if (TURNSTILE_TEST_SECRET_KEYS.has(env.TURNSTILE_SECRET_KEY)) {
+        context.addIssue({
+          code: "custom",
+          path: ["TURNSTILE_SECRET_KEY"],
+          message: "must not be a Turnstile test key in production",
         });
       }
     }

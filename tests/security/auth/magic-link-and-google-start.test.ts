@@ -3,6 +3,9 @@ import { createHash } from "node:crypto";
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// The sign-in path now reaches the rate limiter, a server-only module.
+vi.mock("server-only", () => ({}));
+
 /**
  * A cookie jar that behaves like a route handler's or server action's
  * `next/headers` store: writes are applied, so the PKCE verifier written when
@@ -376,7 +379,7 @@ describe("startGoogleSignIn", () => {
   it("returns a Supabase authorize URL for Google with the configured callback and a code challenge, without a network call", async () => {
     const { requests } = installStubAuthServer({ mode: "normal", users: [] });
 
-    const result = await startGoogleSignIn();
+    const result = await startGoogleSignIn("198.51.100.1");
 
     expect(result.status).toBe("redirect");
     if (result.status !== "redirect") {
@@ -414,7 +417,9 @@ describe("security: redirect URLs ignore a spoofed Host header", () => {
 
   it("takes no request parameter", () => {
     expect(requestMagicLink.length).toBe(1);
-    expect(startGoogleSignIn.length).toBe(0);
+    // Its one parameter is the client network (TASK-003c): a string resolved
+    // from Vercel's platform header only, never the request or its Host.
+    expect(startGoogleSignIn.length).toBe(1);
     expect(requestMagicLinkAction.length).toBe(2);
     expect(startGoogleSignInAction.length).toBe(0);
   });
@@ -435,7 +440,7 @@ describe("security: redirect URLs ignore a spoofed Host header", () => {
     installStubAuthServer({ mode: "normal", users: [] });
     expect(spoofed.headers.get("x-forwarded-host")).toBe("evil.example");
 
-    const result = await startGoogleSignIn();
+    const result = await startGoogleSignIn("198.51.100.1");
 
     expect(result.status).toBe("redirect");
     if (result.status !== "redirect") {
