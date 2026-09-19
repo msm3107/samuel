@@ -1,6 +1,9 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The sign-in path now reaches the rate limiter, a server-only module.
+vi.mock("server-only", () => ({}));
+
 /**
  * The cookies `next/headers` hands to server components in the layout tests.
  * The factory returns the harness store directly, so no cast to Next's cookie

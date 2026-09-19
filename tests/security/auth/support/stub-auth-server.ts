@@ -66,6 +66,25 @@ export type RecordedAuthRequest = {
   authorization: string | null;
 };
 
+/**
+ * A call to the application's rate-limit function (TASK-003c). Recorded apart
+ * from auth requests, so "no Supabase Auth call" assertions stay exact.
+ */
+export type RecordedRateLimitCall = {
+  key: string;
+  limit: number;
+  windowSeconds: number;
+  minIntervalSeconds: number;
+  apikey: string | null;
+};
+
+/**
+ * How the stub database answers the rate-limit function. Defaults to allowing
+ * every hit, so tests about other behaviour are unaffected.
+ */
+export type RateLimitBehaviour =
+  "allow" | "unavailable" | ((call: RecordedRateLimitCall) => boolean);
+
 /** Parsed JSON bodies, recorded separately so request assertions stay exact. */
 export type RecordedAuthBody = { path: string; body: unknown };
 
@@ -131,7 +150,11 @@ function json(body: unknown, status: number) {
  * Installs the stub as the global `fetch` and returns the log of requests it
  * received. Call `vi.unstubAllGlobals()` in `afterEach`.
  */
-export function installStubAuthServer(behaviour: AuthServerBehaviour) {
+export function installStubAuthServer(
+  behaviour: AuthServerBehaviour,
+  { rateLimit = "allow" }: { rateLimit?: RateLimitBehaviour } = {},
+) {
+  const rateLimitCalls: RecordedRateLimitCall[] = [];
   const requests: RecordedAuthRequest[] = [];
   const bodies: RecordedAuthBody[] = [];
   const usedPkceCodes = new Set<string>();
@@ -141,6 +164,23 @@ export function installStubAuthServer(behaviour: AuthServerBehaviour) {
       const request = new Request(input, init);
       const url = new URL(request.url);
       const path = `${url.pathname}${url.search}`;
+
+      if (url.pathname === "/rest/v1/rpc/consume_rate_limit") {
+        const body = (await request.json()) as Record<string, unknown>;
+        const call: RecordedRateLimitCall = {
+          key: String(body.p_key),
+          limit: Number(body.p_limit),
+          windowSeconds: Number(body.p_window_seconds),
+          minIntervalSeconds: Number(body.p_min_interval_seconds),
+          apikey: request.headers.get("apikey"),
+        };
+        rateLimitCalls.push(call);
+        if (rateLimit === "unavailable") {
+          return json({ message: "stubbed database outage" }, 503);
+        }
+        return json(rateLimit === "allow" ? true : rateLimit(call), 200);
+      }
+
       requests.push({
         method: request.method,
         path,
@@ -274,7 +314,7 @@ export function installStubAuthServer(behaviour: AuthServerBehaviour) {
 
   vi.stubGlobal("fetch", stubFetch);
 
-  return { requests, bodies };
+  return { requests, bodies, rateLimitCalls };
 }
 
 function parseJson(text: string): unknown {

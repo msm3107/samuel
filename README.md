@@ -1266,6 +1266,20 @@ to the widget.
 
 Dashboard analytics should also follow data-minimization principles.
 
+### Sign-in rate limits and Cloudflare Turnstile
+
+Sign-in requests are counted to stop abuse. The counters are keyed by an
+HMAC of the email address or client network, so the database never holds
+either one. A counter row is deleted a day after its window ends.
+
+When sign-in requests across the whole service pass an unusual threshold,
+the magic-link form shows a Cloudflare Turnstile challenge. Only then does the
+visitor's browser load Cloudflare's script and send it the signals Turnstile
+uses to tell people from bots. On an ordinary visit nothing is loaded from
+Cloudflare. The server sends Cloudflare the challenge's token to verify it,
+never the visitor's IP address or email address. The privacy policy must name
+Cloudflare as a processor for this purpose.
+
 ---
 
 ## 35. Accessibility

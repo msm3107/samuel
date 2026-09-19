@@ -31,22 +31,36 @@ migration and the real-database tests).
 ## Allowed files
 
 - supabase/migrations/<timestamp>\_rate_limits.sql
-- lib/security/rate-limit.ts, lib/security/client-ip.ts
-- lib/env/server-env.ts (add `RATE_LIMIT_HMAC_SECRET`, and read `VERCEL`)
-- .env.example (the new variable, empty)
-- lib/auth/sign-in/\*\* (wire the limiter in; add a `rate_limited` result code)
-- app/(auth)/sign-in/sign-in-messages.ts (copy for `rate_limited`)
+- lib/security/rate-limit.ts, lib/security/client-ip.ts,
+  lib/security/turnstile.ts
+- lib/env/server-env.ts (add `RATE_LIMIT_HMAC_SECRET`, `TURNSTILE_SITE_KEY`,
+  `TURNSTILE_SECRET_KEY`, and read `VERCEL`)
+- .env.example (the new variables, empty)
+- lib/auth/sign-in/\*\* (wire the limiter in; new result codes)
+- app/(auth)/sign-in/\*\* (copy for the new codes; pass the site key)
+- app/(auth)/auth/callback/route.ts (the callback limit)
+- components/forms/magic-link-form.tsx, components/forms/turnstile-widget.tsx
+- proxy.ts (the sign-in page's `frame-src` only)
+- README.md (the privacy notice, §34)
+- playwright.config.ts, playwright.supabase.config.ts (a project for the
+  challenge spec, which runs after the others; added 2026-09-19)
+- scripts/local-env.mjs, tests/e2e/auth/support/\*\* (local and e2e values
+  for the new variables; the stub answers the limiter's database call)
+- .github/workflows/ci.yml, .github/workflows/e2e.yml (placeholder values for
+  the new variables only)
 - tests/unit/security/\*\*, tests/security/rate-limit/\*\*,
   tests/supabase/rate-limit/\*\* (`*.supabase.ts`)
-- tests/security/auth/\*\*, tests/integration/auth/\*\*, tests/unit/sign-in/\*\*
-  (update for the new code)
+- tests/security/auth/\*\*, tests/integration/auth/\*\*,
+  tests/unit/sign-in/\*\*, tests/unit/auth/\*\*, tests/unit/env/\*\*,
+  tests/setup-test-env.ts, tests/security/headers/\*\*,
+  tests/e2e/auth/\*\*, tests/supabase/auth/\*\* (update for the new behaviour)
 
 ## Forbidden files
 
 - lib/database/\*\* (the limiter uses the existing service-role factory)
-- proxy.ts
-- components/\*\*
-- ci.yml, security.yml
+- proxy.ts beyond the sign-in page's `frame-src`: the refresh limit is
+  TASK-003f
+- security.yml
 
 ## Invariants
 
@@ -119,6 +133,59 @@ fresh buckets.
   Turnstile or hCaptcha). It affects the CSP (`script-src`, `frame-src`), the
   privacy notice (`README.md` §34), and a new secret.
 
+## Amendment: Turnstile, and the refresh limit split out (2026-09-18)
+
+The project owner chose **Cloudflare Turnstile**.
+
+- **The application verifies the token, not GoTrue.** GoTrue's own CAPTCHA
+  check is all or nothing: once enabled, every magic-link request needs a
+  token. The approved design asks for a challenge only past the global
+  threshold, so the app calls Cloudflare's `siteverify` itself and GoTrue's
+  CAPTCHA stays off. This is safe because the anon key is server-only here
+  (there is no browser client), so GoTrue cannot be called around the
+  application. Cloudflare's script loads only while the threshold is
+  exceeded, never on an ordinary visit.
+- **Verification fails closed.** `siteverify` gets a 5-second timeout. A
+  timeout, a network error or an unreadable answer is `unavailable`, and
+  Supabase Auth is not called. The token is at most 2048 characters and
+  checked with Zod before it is sent. Cloudflare refuses a replayed token.
+- **The answer is checked, not only `success`.** With a real secret, the
+  hostname must be the application's and the action `magic_link`, and an
+  answer flagged `result_with_testing_key` is refused. With one of
+  Cloudflare's test secrets, siteverify answers hostname `example.com`, no
+  action, and that flag (observed 2026-09-19; Cloudflare's docs say
+  `localhost` and `test`), so only the flag is checked.
+- **Test keys stay out of production.** In production, Cloudflare's published
+  test keys are refused unless the application URL is loopback (the local
+  production-build suites), the same exception as https.
+- **Check order for a magic link:**
+  1. Malformed body: `invalid_email`, without the floor.
+  2. Per-network limit: `rate_limited`, without the floor.
+  3. Global threshold: past it, a missing token is `captcha_required` and a
+     rejected one `captcha_failed`, both without the floor.
+  4. Inside the response floor: the per-address limit (answers `link_sent`
+     without calling GoTrue), then Supabase Auth.
+- **CSP.** Only the sign-in page gets
+  `frame-src https://challenges.cloudflare.com`. The widget's script is
+  inserted by the application's own nonce-trusted code, which
+  `'strict-dynamic'` allows, so `script-src` gains no host.
+- **Residual risk, recorded.** Someone who knows an address can spend its
+  per-address allowance (3 links per 10 minutes, each a real email to that
+  address) and so hold back that person's magic links for up to 10 minutes.
+  Google sign-in stays available. Per-address limit hits are logged, without
+  the address, for alerting in Phase 12.
+- **Residual risk, recorded (2026-09-19):** a per-address-limited request
+  answers `link_sent` inside the same floor, but it starts no PKCE flow, so
+  its response sets no verifier cookie where a sent link's does. Someone who
+  requests a link for an address can therefore tell that a link was requested
+  for it within the last few minutes. It says nothing about whether an account
+  exists (unregistered addresses get links too). A convincing decoy cookie
+  would have to rewrite auth-js's flow index, which can evict the slot of a
+  link that is really pending: the very thing the per-address limit protects
+  (review finding F1). The project owner may decide otherwise.
+- **The session-refresh limit moves to TASK-003f.** It changes the proxy and
+  is reviewed separately. Its tests move with it.
+
 ## Acceptance criteria
 
 - A request over any limit makes no Supabase Auth call.
@@ -128,7 +195,10 @@ fresh buckets.
   authenticated roles can neither call the function nor touch the table.
 - Concurrent consumption never exceeds the limit (tested against real Postgres).
 - No email address or IP appears in the database or the logs.
-- Typecheck, lint, format, unit, security and `test:supabase` pass.
+- Past the global threshold the form shows the Turnstile widget, and a valid
+  token lets the request through; the CSP allows the widget only on
+  `/sign-in`.
+- Typecheck, lint, format, unit, security, e2e and `test:supabase` pass.
 
 ## Required tests
 
@@ -138,8 +208,11 @@ fresh buckets.
   indistinguishable from success; limiter failure fails closed
 - security: addresses within one IPv6 /64 share a bucket; past the global
   threshold the form demands a CAPTCHA rather than refusing everyone
-- security: past the refresh limit, the proxy makes no GoTrue call and deletes
-  no cookie
+- security: `siteverify` failure, timeout, wrong hostname, wrong action or an
+  oversized token never reaches Supabase Auth; test keys are refused in
+  production off loopback
+- e2e: with the global threshold forced, the widget appears (Cloudflare's
+  always-pass test key) and the request completes
 - supabase: two magic-link requests for one address within 60 s, then the
   first link signs in. Real GoTrue binds the emailed link to the newest flow
   state even when it does not send a second email, so the second request made

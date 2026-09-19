@@ -228,3 +228,26 @@ test("signs out from the dashboard by keyboard and cannot return", async ({
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/sign-in$/);
 });
+
+test("loads nothing from Cloudflare on an ordinary sign-in", async ({
+  page,
+}) => {
+  // The challenge appears only past the global threshold (TASK-003c), so an
+  // ordinary visitor's browser never contacts Cloudflare.
+  const cloudflare: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).hostname.endsWith("cloudflare.com")) {
+      cloudflare.push(request.url());
+    }
+  });
+
+  await page.goto("/sign-in");
+  await page.getByLabel("Email address").fill("person@example.test");
+  await page.getByRole("button", { name: "Email me a sign-in link" }).click();
+  await expect(page.getByRole("status")).toContainText("Check your email");
+
+  await expect(page.getByRole("group", { name: "Security check" })).toHaveCount(
+    0,
+  );
+  expect(cloudflare).toEqual([]);
+});

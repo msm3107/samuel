@@ -22,6 +22,10 @@ const INHERITED = [
   "CI",
 ];
 
+/** Shared with the stub, which recomputes the global bucket's key. */
+export const E2E_RATE_LIMIT_HMAC_SECRET =
+  "e2e-placeholder-rate-limit-secret-of-sufficient-length";
+
 export function e2eEnv(appPort) {
   const inherited = Object.fromEntries(
     INHERITED.filter((name) => process.env[name] !== undefined).map((name) => [
@@ -46,6 +50,12 @@ export function e2eEnv(appPort) {
     STRIPE_PRICE_AGENCY: "price_e2e_placeholder",
     STRIPE_PRICE_AGENCY_PRO: "price_e2e_placeholder",
     CRON_SECRET: "e2e-placeholder-cron-secret-of-sufficient-length",
+    RATE_LIMIT_HMAC_SECRET: E2E_RATE_LIMIT_HMAC_SECRET,
+    // Cloudflare's published always-pass test keys: the widget passes without
+    // interaction, and siteverify accepts its dummy token. The application
+    // accepts them in production only on a loopback URL, as here.
+    TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
+    TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",
     LOG_LEVEL: "warn",
   };
 }

@@ -10,6 +10,10 @@ import type {
 } from "@/lib/auth/sign-in/result-codes";
 import { createSessionClient } from "@/lib/database/session-client";
 import { logger } from "@/lib/logging/logger";
+import {
+  consumeRateLimit,
+  RateLimitUnavailableError,
+} from "@/lib/security/rate-limit";
 
 // Supabase auth codes are UUIDs today; the bound is loose enough to survive a
 // format change and tight enough to reject junk before a network call.
@@ -51,6 +55,8 @@ export async function completeSignIn(params: {
   flowId: unknown;
   providerError: unknown;
   providerErrorCode?: unknown;
+  /** The client network, for the callback's rate limit (TASK-003c). */
+  network: string;
 }): Promise<CompleteSignInResult> {
   if (params.providerError !== null && params.providerError !== undefined) {
     // The provider declined, the user cancelled, or the link expired before it
@@ -75,6 +81,20 @@ export async function completeSignIn(params: {
       : flowIdSchema.safeParse(params.flowId);
   if (flowId && !flowId.success) {
     return failed("link_invalid");
+  }
+
+  // Only a well-formed code reaches Supabase Auth, and only within the client
+  // network's allowance.
+  try {
+    if (!(await consumeRateLimit("callbackNetwork", params.network))) {
+      logger.warn({ event: "rate_limited", limit: "callbackNetwork" });
+      return failed("rate_limited");
+    }
+  } catch (error) {
+    if (!(error instanceof RateLimitUnavailableError)) {
+      throw error;
+    }
+    return failedWithLog(error, "sign_in_unavailable");
   }
 
   // Creating the client can itself fail (configuration, or a context that

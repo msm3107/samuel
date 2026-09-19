@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { completeSignIn } from "@/lib/auth/sign-in/complete-sign-in";
 import { signedInUrl, signInErrorUrl } from "@/lib/auth/sign-in/urls";
+import { requestNetwork } from "@/lib/security/client-ip";
 
 /**
  * Where magic links and Google send the browser back. Session cookies written
@@ -16,6 +17,7 @@ export async function GET(request: NextRequest) {
     flowId: exactlyOne(params, "sb_flow_id"),
     providerError: params.get("error"),
     providerErrorCode: params.get("error_code"),
+    network: requestNetwork(request.headers),
   });
 
   const destination =

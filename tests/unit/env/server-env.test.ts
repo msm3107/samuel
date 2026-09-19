@@ -13,6 +13,9 @@ function validEnv(): Record<string, string> {
     STRIPE_SECRET_KEY: "sk_test_x",
     STRIPE_WEBHOOK_SECRET: "whsec_x",
     CRON_SECRET: "a".repeat(32),
+    RATE_LIMIT_HMAC_SECRET: "b".repeat(32),
+    TURNSTILE_SITE_KEY: "0x4AAAAAAAproductionSiteKey",
+    TURNSTILE_SECRET_KEY: "0x4AAAAAAAproductionSecretKey",
   };
 }
 
@@ -88,6 +91,31 @@ describe("parseServerEnv", () => {
       },
     );
 
+    it.each([
+      ["TURNSTILE_SITE_KEY", "1x00000000000000000000AA"],
+      ["TURNSTILE_SITE_KEY", "3x00000000000000000000FF"],
+      ["TURNSTILE_SECRET_KEY", "1x0000000000000000000000000000000AA"],
+    ])(
+      "rejects the Turnstile test key %s=%s, which passes every challenge",
+      (name, value) => {
+        expect(() => parseServerEnv(production({ [name]: value }))).toThrow(
+          InvalidEnvironmentError,
+        );
+      },
+    );
+
+    it("accepts Turnstile test keys on a loopback application URL", () => {
+      expect(() =>
+        parseServerEnv(
+          production({
+            NEXT_PUBLIC_APP_URL: "http://localhost:3210",
+            TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
+            TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",
+          }),
+        ),
+      ).not.toThrow();
+    });
+
     it("rejects a look-alike host that is not loopback", () => {
       expect(() =>
         parseServerEnv(
@@ -95,6 +123,22 @@ describe("parseServerEnv", () => {
         ),
       ).toThrow(InvalidEnvironmentError);
     });
+  });
+
+  it("rejects a rate-limit HMAC secret shorter than 32 characters", () => {
+    expect(() =>
+      parseServerEnv({ ...validEnv(), RATE_LIMIT_HMAC_SECRET: "c".repeat(31) }),
+    ).toThrow(InvalidEnvironmentError);
+  });
+
+  it.each([
+    "RATE_LIMIT_HMAC_SECRET",
+    "TURNSTILE_SITE_KEY",
+    "TURNSTILE_SECRET_KEY",
+  ])("requires %s", (name) => {
+    const source = validEnv();
+    delete source[name];
+    expect(() => parseServerEnv(source)).toThrow(InvalidEnvironmentError);
   });
 
   it("allows plain http outside production, for local development", () => {

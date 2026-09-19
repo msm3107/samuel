@@ -69,6 +69,11 @@ export function localAppEnv({ appUrl = "http://localhost:3000" } = {}) {
     STRIPE_SECRET_KEY: "sk_test_local_placeholder",
     STRIPE_WEBHOOK_SECRET: "whsec_local_placeholder",
     CRON_SECRET: "local-placeholder-cron-secret-of-sufficient-length",
+    RATE_LIMIT_HMAC_SECRET:
+      "local-placeholder-rate-limit-secret-of-sufficient-length",
+    // Cloudflare's published always-pass test keys.
+    TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
+    TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",
     LOG_LEVEL: "warn",
     // For suites that read mail: Mailpit's HTTP API.
     LOCAL_MAILPIT_URL: status.MAILPIT_URL ?? status.INBUCKET_URL ?? "",

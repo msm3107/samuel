@@ -3,6 +3,7 @@
 import { useActionState, useId, useState, type FormEvent } from "react";
 
 import { magicLinkMessage } from "@/app/(auth)/sign-in/sign-in-messages";
+import { TurnstileWidget } from "@/components/forms/turnstile-widget";
 import {
   requestMagicLinkAction,
   type MagicLinkFormState,
@@ -11,9 +12,14 @@ import {
 type MagicLinkFormProps = {
   /** A message for a failed callback, already mapped from an allowlisted code. */
   callbackError?: string;
+  /** Cloudflare Turnstile's public site key, for the challenge. */
+  turnstileSiteKey: string;
 };
 
-export function MagicLinkForm({ callbackError }: MagicLinkFormProps) {
+export function MagicLinkForm({
+  callbackError,
+  turnstileSiteKey,
+}: MagicLinkFormProps) {
   const [state, formAction, isPending] = useActionState<
     MagicLinkFormState,
     FormData
@@ -22,6 +28,12 @@ export function MagicLinkForm({ callbackError }: MagicLinkFormProps) {
   // Controlled, because React resets an uncontrolled form after its action
   // runs: a person correcting a typo would otherwise have to retype it all.
   const [email, setEmail] = useState("");
+
+  // Counts attempts, so each answer that asks for a challenge mounts a fresh
+  // widget: a Turnstile token works once.
+  const [attempt, setAttempt] = useState(0);
+  const challengeRequired =
+    state?.result === "captcha_required" || state?.result === "captcha_failed";
 
   const emailId = useId();
   const statusId = useId();
@@ -39,7 +51,9 @@ export function MagicLinkForm({ callbackError }: MagicLinkFormProps) {
     // keyboard user's focus back to the top of the page.
     if (isPending) {
       event.preventDefault();
+      return;
     }
+    setAttempt((count) => count + 1);
   }
 
   return (
@@ -81,6 +95,13 @@ export function MagicLinkForm({ callbackError }: MagicLinkFormProps) {
           className="w-full rounded-md border border-slate-500 px-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
         />
       </div>
+
+      {/* Only past the global sign-in threshold, so Cloudflare's script is not
+          loaded on an ordinary visit. Before the button, so tabbing reaches
+          the challenge first. */}
+      {challengeRequired ? (
+        <TurnstileWidget key={attempt} siteKey={turnstileSiteKey} />
+      ) : null}
 
       <button
         type="submit"

@@ -141,7 +141,7 @@ describe("sign-in against local Supabase", () => {
     const link = await waitForMagicLink(address);
 
     // The person clicks "Continue with Google", then backs out.
-    const google = await startGoogleSignIn();
+    const google = await startGoogleSignIn("198.51.100.1");
     expect(google.status).toBe("redirect");
 
     const callbackLocation = await openVerifyLink(link);
@@ -150,6 +150,29 @@ describe("sign-in against local Supabase", () => {
     );
     const response = await callback(new NextRequest(callbackLocation));
 
+    expect(response.headers.get("location")).toBe(
+      `${serverEnv().NEXT_PUBLIC_APP_URL}/dashboard`,
+    );
+    await expect(requireSession()).resolves.toEqual({
+      userId: await userIdFor(address),
+    });
+  });
+
+  it("keeps the first link working when the same address asks again within 60 s", async () => {
+    // TASK-003c. Real GoTrue binds an emailed link to the address's newest
+    // flow state even when it sends no second email, so a second request made
+    // the only link fail with bad_code_verifier (observed in CI on PR #8).
+    // The per-address spacing answers the second request itself, without
+    // calling GoTrue.
+    const address = freshAddress();
+    await expect(requestMagicLink(address)).resolves.toBe("link_sent");
+    const link = await waitForMagicLink(address);
+
+    await expect(requestMagicLink(address)).resolves.toBe("link_sent");
+
+    const response = await callback(
+      new NextRequest(await openVerifyLink(link)),
+    );
     expect(response.headers.get("location")).toBe(
       `${serverEnv().NEXT_PUBLIC_APP_URL}/dashboard`,
     );

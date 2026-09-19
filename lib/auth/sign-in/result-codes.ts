@@ -2,10 +2,22 @@
  * Outcomes the sign-in screen renders. Codes, not copy: the screen owns the
  * wording, and nothing here carries Supabase error text to the browser.
  */
-export type MagicLinkResult = "link_sent" | "invalid_email" | "unavailable";
+export type MagicLinkResult =
+  | "link_sent"
+  | "invalid_email"
+  | "unavailable"
+  // Too many requests from this client network. Says nothing about any
+  // address; a per-address limit answers `link_sent` instead.
+  | "rate_limited"
+  // Past the global threshold: the form must show a Turnstile challenge.
+  | "captcha_required"
+  // A challenge was sent back, and Cloudflare refused it.
+  | "captcha_failed";
 
 export type GoogleSignInResult =
-  { status: "redirect"; url: string } | { status: "unavailable" };
+  | { status: "redirect"; url: string }
+  | { status: "unavailable" }
+  | { status: "rate_limited" };
 
 /**
  * The only values `/sign-in?error=` may carry. The callback never echoes
@@ -17,6 +29,7 @@ export const CALLBACK_ERROR_CODES = [
   "link_other_browser",
   "sign_in_failed",
   "sign_in_unavailable",
+  "rate_limited",
 ] as const;
 
 export type CallbackErrorCode = (typeof CALLBACK_ERROR_CODES)[number];
