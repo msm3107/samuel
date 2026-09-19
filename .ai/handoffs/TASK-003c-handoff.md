@@ -143,9 +143,9 @@ adversarial verifier: 10 findings, 6 confirmed, 4 rejected with reasons.
 
 - `pnpm typecheck`, `pnpm lint`, `pnpm format:check`: passed (with the owner's
   untracked `CODEX-SECURITY.md` set aside)
-- `pnpm test`: 517 passed
+- `pnpm test`: 528 passed (after rebasing onto #9 and #10)
 - `pnpm test:integration`: 26 passed
-- `pnpm test:security`: 267 passed
+- `pnpm test:security`: 270 passed
 - `pnpm build`: passed with CI's placeholder environment
 - `pnpm test:e2e`: 17 passed, including the Turnstile challenge against
   Cloudflare
