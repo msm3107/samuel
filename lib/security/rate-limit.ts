@@ -107,6 +107,20 @@ export const RATE_LIMITS = {
     windowSeconds: 5 * 60,
     minIntervalSeconds: 0,
   },
+  // Service-wide, under GoTrue's own per-IP token bucket (150 per 5 minutes,
+  // shared with callback exchanges: 40 there plus 100 here).
+  sessionRefreshGlobal: {
+    scope: "session_refresh:global",
+    limit: 100,
+    windowSeconds: 5 * 60,
+    minIntervalSeconds: 0,
+  },
+  sessionRefreshCeilingAlert: {
+    scope: "session_refresh:ceiling_alert",
+    limit: 1,
+    windowSeconds: 5 * 60,
+    minIntervalSeconds: 0,
+  },
 } as const satisfies Record<string, RateLimit>;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;

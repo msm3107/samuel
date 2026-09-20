@@ -3,10 +3,17 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SessionLookupError } from "@/lib/auth/errors";
 import { isDashboardPath, SIGN_IN_PATH } from "@/lib/auth/protected-routes";
 import { resolveSessionUser } from "@/lib/auth/resolve-session-user";
+import { sessionRefreshState } from "@/lib/auth/session-expiry";
 import { createProxySessionClient } from "@/lib/database/proxy-session-client";
 import { isDevelopment } from "@/lib/env/runtime-mode";
 import { serverEnv } from "@/lib/env/server-env";
 import { logger } from "@/lib/logging/logger";
+import { requestNetwork } from "@/lib/security/client-ip";
+import {
+  consumeRateLimit,
+  GLOBAL,
+  RateLimitUnavailableError,
+} from "@/lib/security/rate-limit";
 
 const NONCE_HEADER = "x-nonce";
 
@@ -78,6 +85,48 @@ function applySecurityHeaders(
  * navigation, and RSC requests naming their router state), so the layout
  * alone is not a per-request guarantee.
  */
+/**
+ * Whether this request may spend a token refresh (TASK-003f). Every expired
+ * session makes the proxy refresh it from this application's own address, and
+ * GoTrue counts refreshes per client IP, so anonymous junk cookies could
+ * exhaust that budget and have everyone else refused (review finding F2).
+ *
+ * Only requests that would actually refresh consume an allowance, so a valid
+ * session costs nothing. Past a limit, or when the limiter cannot answer, the
+ * session is unverifiable: no auth-server call, and no cookie removed.
+ */
+async function mayRefreshSession(request: NextRequest): Promise<boolean> {
+  if (sessionRefreshState(request.cookies) !== "refresh") {
+    return true;
+  }
+
+  try {
+    if (
+      !(await consumeRateLimit(
+        "sessionRefreshNetwork",
+        requestNetwork(request.headers),
+      ))
+    ) {
+      logger.warn({ event: "rate_limited", limit: "sessionRefreshNetwork" });
+      return false;
+    }
+    if (!(await consumeRateLimit("sessionRefreshGlobal", GLOBAL))) {
+      // Once per window, so the attacker does not decide the error volume.
+      if (await consumeRateLimit("sessionRefreshCeilingAlert", GLOBAL)) {
+        logger.error({ event: "session_refresh_ceiling_reached" });
+      }
+      return false;
+    }
+  } catch (error) {
+    if (!(error instanceof RateLimitUnavailableError)) {
+      throw error;
+    }
+    logger.error({ event: "session_refresh_limiter_unavailable" });
+    return false;
+  }
+  return true;
+}
+
 async function resolveProxySessionState(
   supabase: ReturnType<typeof createProxySessionClient>["supabase"],
 ): Promise<
@@ -162,10 +211,20 @@ export default async function proxy(request: NextRequest) {
   const nonce = crypto.randomUUID().replaceAll("-", "");
   const contentSecurityPolicy = buildContentSecurityPolicy(nonce);
 
+  // Before the session client exists: creating one subscribes to auth events,
+  // which makes auth-js load and refresh the session in the background
+  // (@supabase/ssr's createServerClient). Past the limit that refresh must
+  // never start, and nothing may remove the session's cookies.
+  const mayRefresh = await mayRefreshSession(request);
+
   // Must run before request.headers is copied below: a token refresh rewrites
   // the request's cookies, and server components must receive the new ones.
-  const { supabase, applySessionCookies } = createProxySessionClient(request);
-  const session = await resolveProxySessionState(supabase);
+  const { supabase, applySessionCookies } = mayRefresh
+    ? createProxySessionClient(request)
+    : { supabase: null, applySessionCookies: () => {} };
+  const session = supabase
+    ? await resolveProxySessionState(supabase)
+    : { state: "unverifiable" as const, error: new SessionLookupError() };
   const isDashboardRequest = isDashboardPath(request.nextUrl.pathname);
 
   let response: NextResponse;
