@@ -30,6 +30,10 @@ const jar = vi.hoisted(() => new Map<string, string>());
 vi.mock("next/headers", () => ({
   cookies: async () => ({
     getAll: () => [...jar].map(([name, value]) => ({ name, value })),
+    get: (name: string) => {
+      const value = jar.get(name);
+      return value === undefined ? undefined : { name, value };
+    },
     set: (name: string, value: string, options?: { maxAge?: number }) => {
       if (value === "" || options?.maxAge === 0) {
         jar.delete(name);

@@ -1,6 +1,7 @@
 import { isAuthApiError } from "@supabase/supabase-js";
 
 import { parseEmail } from "@/lib/auth/sign-in/email";
+import { issueFlowTicket } from "@/lib/auth/sign-in/flow-ticket";
 import type { MagicLinkResult } from "@/lib/auth/sign-in/result-codes";
 import { callbackUrl } from "@/lib/auth/sign-in/urls";
 import { createSessionClient } from "@/lib/database/session-client";
@@ -62,6 +63,9 @@ export async function requestMagicLink(
     return "unavailable";
   }
   if (!allowed) {
+    // The same ticket a sent link gets, so this answer stays indistinguishable
+    // from success in everything but the PKCE verifier cookie (TASK-003c).
+    await issueFlowTicket();
     // Never the address. Repeated hits can be someone holding back another
     // person's links (TASK-003c, residual risk), so they are worth alerting on.
     logger.warn({ event: "rate_limited", limit: "magicLinkAddress" });
@@ -81,6 +85,7 @@ export async function requestMagicLink(
   }
 
   if (!error) {
+    await issueFlowTicket();
     return "link_sent";
   }
 

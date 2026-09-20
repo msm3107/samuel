@@ -39,7 +39,7 @@ TASK-003c (merged in #11).
 ## Allowed files
 
 - lib/security/rate-limit.ts, lib/security/client-ip.ts
-- lib/auth/sign-in/\*\*
+- lib/auth/sign-in/\*\* (including flow-ticket.ts, new)
 - lib/env/server-env.ts (`VERCEL` required in production off loopback)
 - app/(auth)/sign-in/sign-in-messages.ts
 - proxy.ts (`frame-src` on every page it serves)
@@ -49,7 +49,9 @@ TASK-003c (merged in #11).
 - .ai/tasks/TASK-003c-sign-in-rate-limiting.md (record the acceptances)
 - .ai/tasks/TASK-003i-session-removal-outside-proxy.md (new contract),
   .ai/tasks/TASK-007-organization-creation.md (its dependency on 003i)
-- tests/unit/\*\*, tests/security/\*\*, tests/e2e/auth/\*\*
+- tests/unit/\*\*, tests/security/\*\*, tests/e2e/auth/\*\*,
+  tests/integration/auth/\*\*, tests/supabase/auth/\*\* (their cookie stubs
+  gain `get`, which the flow ticket reads)
 
 ## Forbidden files
 
@@ -71,8 +73,32 @@ TASK-003c (merged in #11).
   serves allows Cloudflare's frame, because Next.js keeps the policy of the
   page a client-side navigation started from (sign-out and the dashboard's
   redirect both navigate to `/sign-in` that way). `script-src` is unchanged.
+- **A callback proves a flow started here.** Sign-in paths that start a PKCE
+  flow (a magic link, a Google redirect) issue a signed, HttpOnly flow ticket.
+  The callback refuses anything without a valid, unexpired ticket
+  (`link_other_browser`) before it spends any rate limit or calls Supabase
+  Auth, and each ticket buys one exchange. Otherwise a flood of bare
+  `/auth/callback?code=…` URLs — no cookie, no flow — could spend the
+  service-wide ceiling below and refuse everyone's sign-in (found by the
+  review of this task, 2026-09-19).
+- **The ticket is not a credential.** It carries no identity and grants no
+  access; the PKCE verifier still binds a code to one browser. It is issued
+  on the per-address-limited path too, so that answer stays as
+  indistinguishable from a sent link as it was.
 - **Production runs on Vercel.** In production, off loopback, `VERCEL` must be
   `1`; otherwise every visitor would share one rate-limit bucket.
+
+## Residual risk, for the project owner
+
+Past the callback ceiling, new sign-ins are refused while signed-in people
+keep working: the ceiling exists to reserve GoTrue's shared per-IP token
+budget for refreshes. The flow ticket makes a free flood useless, but someone
+willing to start a real flow per attempt from many networks (IPv6 /64s are
+cheap) can still reach the ceiling and hold new sign-ins at
+`sign_in_unavailable`. The alternative — no ceiling — lets the same attacker
+exhaust GoTrue's bucket, which refuses refreshes too and takes signed-in
+people's dashboards down with it. Needs an `Accepted by <owner>, <date>` or a
+different instruction.
 
 ## Acceptance criteria
 
@@ -80,6 +106,8 @@ TASK-003c (merged in #11).
   can sign in; past 30 it is refused.
 - Past 40 callback exchanges in 5 minutes across the service, a callback makes
   no GoTrue call.
+- A callback without a valid flow ticket spends no rate limit and makes no
+  GoTrue call; one ticket completes one exchange.
 - A hung limiter answers `unavailable` within about 2 seconds.
 - Signing out and then requesting a link past the threshold shows a working
   challenge without a reload.
@@ -91,7 +119,11 @@ TASK-003c (merged in #11).
 
 - security: soft network limit gives `captcha_required`, the cap gives
   `rate_limited`, both without Supabase Auth calls and without the floor
-- security: the callback ceiling refuses without a GoTrue call
+- security: the callback ceiling refuses without a GoTrue call, and its alert
+  is logged once per window
+- security: callbacks without a ticket, and with a forged ticket, spend
+  nothing and call no GoTrue; a replayed ticket value is refused
+- unit: the ticket's signature, age, shape and single use
 - security: the threshold alert is logged once per window, not per request
 - unit: the limiter times out as unavailable; `VERCEL` is required in
   production off loopback

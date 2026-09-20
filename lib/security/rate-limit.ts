@@ -80,6 +80,14 @@ export const RATE_LIMITS = {
   // they all come from this application's servers. Per-network limits have
   // no total, so this and sessionRefreshGlobal (100) keep the sum under 150:
   // many networks cannot spend the bucket and have real refreshes refused.
+  // One exchange per ticket: a copied ticket cannot be replayed into many
+  // exchanges and so cannot spend the service-wide ceiling below.
+  callbackTicket: {
+    scope: "callback:ticket",
+    limit: 1,
+    windowSeconds: 60 * 60,
+    minIntervalSeconds: 0,
+  },
   callbackGlobal: {
     scope: "callback:global",
     limit: 40,

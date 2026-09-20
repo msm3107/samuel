@@ -176,6 +176,7 @@ describe("consumeRateLimit", () => {
       magicLinkThresholdAlert: [1, 300, 0],
       googleStartNetwork: [30, 600, 0],
       callbackNetwork: [60, 600, 0],
+      callbackTicket: [1, 3600, 0],
       callbackGlobal: [40, 300, 0],
       callbackCeilingAlert: [1, 300, 0],
       sessionRefreshNetwork: [30, 300, 0],

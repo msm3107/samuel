@@ -8,6 +8,7 @@ import type {
   CallbackErrorCode,
   CompleteSignInResult,
 } from "@/lib/auth/sign-in/result-codes";
+import { consumeFlowTicket } from "@/lib/auth/sign-in/flow-ticket";
 import { createSessionClient } from "@/lib/database/session-client";
 import { logger } from "@/lib/logging/logger";
 import {
@@ -84,12 +85,25 @@ export async function completeSignIn(params: {
     return failed("link_invalid");
   }
 
+  // Proof that this browser started a flow here, checked before anything is
+  // spent: otherwise a flood of bare callback URLs could spend the
+  // service-wide ceiling and refuse everyone's sign-in (TASK-003g).
+  const ticket = await consumeFlowTicket();
+  if (ticket === null) {
+    return failed("link_other_browser");
+  }
+
   // Only a well-formed code reaches Supabase Auth, and only within the client
   // network's allowance.
   try {
     if (!(await consumeRateLimit("callbackNetwork", params.network))) {
       logger.warn({ event: "rate_limited", limit: "callbackNetwork" });
       return failed("rate_limited");
+    }
+    // One exchange per started flow.
+    if (!(await consumeRateLimit("callbackTicket", ticket))) {
+      logger.warn({ event: "rate_limited", limit: "callbackTicket" });
+      return failed("link_invalid");
     }
     // Service-wide, so exchanges from many networks cannot spend the GoTrue
     // bucket real users' refreshes need (TASK-003g). Not the visitor's doing,

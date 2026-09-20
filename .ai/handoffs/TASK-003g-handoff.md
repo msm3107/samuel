@@ -21,6 +21,32 @@ decisions of 2026-09-19.
 | Sessions never end in production on the free plan       | Owner chose in-app enforcement: TASK-003h, next                       |
 | `main` unprotected                                      | Branch protection set (owner-approved): four checks, admins included  |
 
+### The pre-PR review found one real problem, now fixed
+
+Reviewers (security, contract) plus an adversarial verifier: 3 findings, 1
+confirmed, 2 rejected as test-strength suggestions (both adopted anyway).
+
+**Confirmed, major:** the new service-wide callback ceiling could be spent by
+anyone sending bare `/auth/callback?code=<junk>` requests — no cookie, no
+flow, no valid code. Two networks could hold it at zero and every real
+sign-in would answer `sign_in_unavailable`. The ceiling meant to protect
+GoTrue's bucket became a lever for locking everyone out.
+
+**Fix: a signed flow ticket.** Starting a flow (a magic link, a Google
+redirect) issues an HttpOnly, signed, one-hour ticket. The callback refuses
+anything without a valid one as `link_other_browser`, before spending any
+limit or calling GoTrue, and each ticket buys exactly one exchange
+(`callbackTicket`, 1 per hour, keyed by the ticket's nonce). A free flood now
+costs the attacker everything and gains nothing. The ticket carries no
+identity: the PKCE verifier still binds a code to one browser, and the
+per-address-limited path issues a ticket too, so that answer is no more
+distinguishable than before.
+
+**Residual risk needing your decision:** someone willing to start a real flow
+per attempt, from many networks, can still reach the ceiling and hold new
+sign-ins at `sign_in_unavailable`; signed-in people keep working, which is
+what the ceiling reserves GoTrue's budget for. Recorded in the contract.
+
 ### How GoTrue counts the callback (read from its source)
 
 `internal/api/token.go`: the `pkce`, `refresh_token` and `password` grants
@@ -36,7 +62,8 @@ network.
 - `lib/security/rate-limit.ts`: new limits (`magicLinkNetworkCap`,
   `magicLinkThresholdAlert`, `callbackGlobal`, `callbackCeilingAlert`), raised
   Google and callback limits, `RATE_LIMIT_TIMEOUT_MS`
-- `lib/auth/sign-in/magic-link-gate.ts`, `complete-sign-in.ts`
+- `lib/auth/sign-in/flow-ticket.ts` (new), `magic-link-gate.ts`,
+  `complete-sign-in.ts`, `request-magic-link.ts`, `start-google-sign-in.ts`
 - `proxy.ts`: `frame-src https://challenges.cloudflare.com` on every page
 - `lib/env/server-env.ts`: `VERCEL` required in production off loopback
 - `.gitattributes`; `.env.example` and `supabase/config.toml` re-normalized
@@ -60,8 +87,16 @@ network.
   limits table
 - e2e: past the threshold, sign in, sign out, request again: the widget
   appears and the link is sent, with no CSP violations
-- **Mutation check:** 6 mutants (no cap, busy network refused, alert every
-  time, no callback ceiling, no timeout, `VERCEL` not required), all caught.
+- security: callbacks without a ticket (five in a row) and with a forged
+  ticket spend no rate limit and call no GoTrue; one ticket buys one exchange
+  and a replay of its value is refused; the ceiling alert is logged once
+  across three callbacks
+- unit: the flow ticket's signature, nonce, issue time, age, shape and single
+  use (15 cases)
+- **Mutation check:** 11 mutants — 6 for the limits (no cap, busy network
+  refused, alert every time, no callback ceiling, no timeout, `VERCEL` not
+  required) and 5 for the ticket (not required, reusable, signature
+  unchecked, age unchecked, not issued after a sent link) — all caught.
   The e2e sign-out test fails against the old "/sign-in only" frame rule
   (the widget never produces a token). Every file restored, hash-checked.
 
@@ -70,9 +105,9 @@ network.
 - `pnpm typecheck`, `pnpm lint`: passed
 - `pnpm format:check`: passed (with the owner's untracked
   `CODEX-SECURITY.md` set aside)
-- `pnpm test`: 535 passed
+- `pnpm test`: 554 passed
 - `pnpm test:integration`: 26 passed
-- `pnpm test:security`: 273 passed
+- `pnpm test:security`: 277 passed
 - `pnpm build`: passed with CI's placeholder environment
 - `pnpm test:e2e`: 18 passed
 
