@@ -83,9 +83,27 @@ describe("sessionRefreshState", () => {
     ["JSON that is not a session", encoded({ hello: "world" })],
     ["a text expiry", encoded({ expires_at: "soon" })],
     ["an empty value", ""],
-  ])("treats %s as needing a refresh, the costly case", (_label, value) => {
+  ])(
+    "reports no session for %s, which auth-js never sends to the auth server",
+    (_label, value) => {
+      expect(
+        sessionRefreshState(store({ [sessionCookieName()]: value }), NOW),
+      ).toBe("none");
+    },
+  );
+
+  it("still reports a refresh for a decodable session whose tokens are junk", () => {
     expect(
-      sessionRefreshState(store({ [sessionCookieName()]: value }), NOW),
+      sessionRefreshState(
+        store({
+          [sessionCookieName()]: encoded({
+            expires_at: NOW - 1,
+            access_token: "junk",
+            refresh_token: "junk",
+          }),
+        }),
+        NOW,
+      ),
     ).toBe("refresh");
   });
 });

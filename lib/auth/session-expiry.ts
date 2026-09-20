@@ -8,7 +8,12 @@ import { serverEnv } from "@/lib/env/server-env";
  *
  * - `none`: no session cookie at all.
  * - `valid`: an access token that has not expired.
- * - `refresh`: expired, or unreadable — auth-js would go to the auth server.
+ * - `refresh`: an access token that has expired, so auth-js would go to the
+ *   auth server for a new one.
+ *
+ * A cookie that cannot be decoded counts as `none`: auth-js treats an
+ * undecodable value as no session at all and makes no request for it, so it
+ * must not spend anyone's refresh allowance.
  *
  * Read from the cookie alone, with no network call, so the proxy can consume
  * the refresh allowance before GoTrue is asked (TASK-003f). The cookie is not
@@ -35,9 +40,7 @@ export function sessionRefreshState(
 
   const session = storedSessionSchema.safeParse(decodeSession(value));
   if (!session.success) {
-    // Unreadable: auth-js will try to refresh or reject it, either way through
-    // the auth server, so it costs what a refresh costs.
-    return "refresh";
+    return "none";
   }
   return session.data.expires_at > nowSeconds ? "valid" : "refresh";
 }

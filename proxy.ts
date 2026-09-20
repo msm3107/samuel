@@ -3,7 +3,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SessionLookupError } from "@/lib/auth/errors";
 import { isDashboardPath, SIGN_IN_PATH } from "@/lib/auth/protected-routes";
 import { resolveSessionUser } from "@/lib/auth/resolve-session-user";
-import { sessionRefreshState } from "@/lib/auth/session-expiry";
+import {
+  sessionCookieName,
+  sessionRefreshState,
+} from "@/lib/auth/session-expiry";
 import { createProxySessionClient } from "@/lib/database/proxy-session-client";
 import { isDevelopment } from "@/lib/env/runtime-mode";
 import { serverEnv } from "@/lib/env/server-env";
@@ -164,6 +167,35 @@ function describeLookupFailure(error: SessionLookupError) {
   return causeStatus === undefined ? { causeName } : { causeName, causeStatus };
 }
 
+/**
+ * Rewrites the forwarded `cookie` header without the session cookie or its
+ * chunks. Only this request's view changes: no `Set-Cookie` is written, so the
+ * browser keeps everything, and the PKCE verifier and flow-ticket cookies stay
+ * put for a sign-in that is still in progress.
+ */
+function withoutSessionCookies(request: NextRequest, headers: Headers) {
+  const name = sessionCookieName();
+  const kept = request.cookies
+    .getAll()
+    .filter(
+      (cookie) =>
+        cookie.name !== name &&
+        !(
+          cookie.name.startsWith(`${name}.`) &&
+          /^\d+$/.test(cookie.name.slice(name.length + 1))
+        ),
+    );
+
+  if (kept.length === 0) {
+    headers.delete("cookie");
+    return;
+  }
+  headers.set(
+    "cookie",
+    kept.map((cookie) => `${cookie.name}=${cookie.value}`).join("; "),
+  );
+}
+
 function redirectToSignIn() {
   // Built from configuration rather than the request's Host header, and with
   // no trace of the requested path, so the redirect reveals nothing and cannot
@@ -236,6 +268,14 @@ export default async function proxy(request: NextRequest) {
     // Next.js reads the nonce back off the request headers to stamp its own
     // script tags, so the policy is set on both request and response.
     const requestHeaders = new Headers(request.headers);
+    if (!mayRefresh) {
+      // The refusal has to reach the handlers too: a server action or route
+      // handler builds its own session client, and creating one lets auth-js
+      // refresh in the background, unmetered. Hiding the session from this
+      // request makes that impossible; the browser keeps its cookies, so
+      // nobody is signed out and the next request tries again.
+      withoutSessionCookies(request, requestHeaders);
+    }
     requestHeaders.set(NONCE_HEADER, nonce);
     requestHeaders.set("Content-Security-Policy", contentSecurityPolicy);
     response = NextResponse.next({ request: { headers: requestHeaders } });

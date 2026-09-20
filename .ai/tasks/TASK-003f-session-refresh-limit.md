@@ -24,6 +24,9 @@ resolution, `lib/security/client-ip.ts`).
 
 - proxy.ts
 - lib/auth/session-expiry.ts (reads the cookie's `expires_at` locally)
+- lib/security/rate-limit.ts (the two new limits this task's amendment adds:
+  `sessionRefreshGlobal` and its alert; added 2026-09-19, as TASK-003g did for
+  its own entries)
 - tests/unit/auth/\*\*, tests/security/auth/\*\*, tests/security/rate-limit/\*\*,
   tests/supabase/auth/\*\*
 
@@ -53,6 +56,13 @@ resolution, `lib/security/client-ip.ts`).
 - **Past the limit, nothing is deleted.** The session is treated as
   unverifiable: no GoTrue call, no cookie removed, dashboard paths answer 503
   with a reference, other paths render signed out for this request.
+- **The refusal reaches the handlers.** A server action or route handler
+  builds its own session client, and creating one lets auth-js refresh in the
+  background, so a proxy-only refusal would just move the refresh downstream.
+  When the proxy refuses, the session cookie and its chunks are removed from
+  the request it forwards. Only this request's view changes: no `Set-Cookie`
+  is written, the browser keeps everything, and the PKCE verifier and flow
+  ticket are left in place so a sign-in in progress still works.
 - **An unreadable cookie is not a refresh.** A cookie that cannot be decoded
   consumes nothing and follows the existing rejection path.
 - **Fails closed.** If the limiter cannot be consulted, the session is

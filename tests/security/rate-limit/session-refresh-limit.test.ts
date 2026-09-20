@@ -98,6 +98,75 @@ describe("security: refreshes are limited before they reach the auth server", ()
     expect(clearingSessionCookies(response)).toEqual([]);
   });
 
+  it("hides the session from handlers when it refuses, so they cannot refresh either", async () => {
+    // A server action or route handler builds its own session client, and
+    // creating one lets auth-js refresh in the background. The refusal has to
+    // reach them, or the limit would only move the refresh downstream.
+    const { requests } = installStubAuthServer(
+      { mode: "normal", users: [USER_A], refreshedUsers: [REFRESHED_USER_A] },
+      { rateLimit: refusing(key("sessionRefreshNetwork", LOCAL_NETWORK)) },
+    );
+    const session = expiredCookie();
+
+    const response = await proxy(
+      proxyRequest("/sign-in", {
+        cookies: [
+          session,
+          { name: "a50_sign_in_flow", value: "ticket-value" },
+          { name: `${sessionCookieName()}-code-verifier`, value: "verifier" },
+        ],
+      }),
+    );
+
+    const forwarded = response.headers.get("x-middleware-request-cookie") ?? "";
+    expect(forwarded).not.toContain(session.value);
+    expect(forwarded).not.toContain(`${sessionCookieName()}=`);
+    // Only the session is hidden: a sign-in in progress keeps its cookies.
+    expect(forwarded).toContain("a50_sign_in_flow=ticket-value");
+    expect(forwarded).toContain(`${sessionCookieName()}-code-verifier=`);
+    // And the browser still holds everything.
+    expect(clearingSessionCookies(response)).toEqual([]);
+    expect(tokenRequests(requests)).toEqual([]);
+  });
+
+  it("forwards the session untouched when it allows the refresh", async () => {
+    installStubAuthServer({
+      mode: "normal",
+      users: [USER_A],
+      refreshedUsers: [REFRESHED_USER_A],
+    });
+
+    const response = await proxy(
+      proxyRequest("/sign-in", { cookies: [sessionCookie(USER_A)] }),
+    );
+
+    expect(response.headers.get("x-middleware-request-cookie")).toContain(
+      `${sessionCookieName()}=`,
+    );
+  });
+
+  it("spends nothing on a session cookie it cannot read", async () => {
+    // auth-js treats an undecodable cookie as no session and asks the auth
+    // server for nothing, so it must not cost anyone their allowance.
+    const { rateLimitCalls, requests } = installStubAuthServer({
+      mode: "normal",
+      users: [USER_A],
+    });
+
+    for (const value of ["not-a-session", "base64-!!!", ""]) {
+      await proxy(
+        proxyRequest("/dashboard", {
+          cookies: [{ name: sessionCookieName(), value }],
+        }),
+      );
+    }
+
+    expect(rateLimitCalls).toEqual([]);
+    expect(
+      requests.filter((request) => request.path.includes("grant_type")),
+    ).toEqual([]);
+  });
+
   it("spends nothing for a session whose access token is still valid", async () => {
     const { rateLimitCalls, requests } = installStubAuthServer({
       mode: "normal",
