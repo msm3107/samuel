@@ -42,6 +42,18 @@ const CREDENTIAL_REJECTION_STATUSES: ReadonlySet<number> = new Set([
  */
 export async function resolveSessionUser(
   auth: SupabaseClient["auth"],
+  {
+    hadStoredSession = false,
+  }: {
+    /**
+     * Whether this request arrived with a readable session cookie. When it
+     * did, "no session" is not a verdict: auth-js drops the session from its
+     * own memory after a failed background refresh (a 429 caused by other
+     * people's traffic), and reading that as "signed out" would sign the
+     * person out and clear their cookies (TASK-003i, review finding F2).
+     */
+    hadStoredSession?: boolean;
+  } = {},
 ): Promise<SessionResolution> {
   let stored: Awaited<ReturnType<SupabaseClient["auth"]["getSession"]>>;
   try {
@@ -54,6 +66,9 @@ export async function resolveSessionUser(
   }
   const accessToken = stored.data.session?.access_token;
   if (!accessToken) {
+    if (hadStoredSession) {
+      throw new SessionLookupError();
+    }
     return { status: "unauthenticated", reason: "session_missing" };
   }
 

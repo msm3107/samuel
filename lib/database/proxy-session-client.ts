@@ -33,10 +33,23 @@ export function createProxySessionClient(request: NextRequest) {
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (cookiesToSet, headers) => {
+        const removesOnly = cookiesToSet.every(({ value, options }) =>
+          isRemoval(value, options),
+        );
         for (const { name, value } of cookiesToSet) {
           // Server code rendering this request reads cookies from the request,
           // so it must see the refreshed token rather than the expired one.
-          request.cookies.set(name, value);
+          //
+          // A batch that only removes the session is kept out of the request:
+          // creating this client subscribes to auth events, which makes
+          // auth-js refresh in the background and, on a failure, delete the
+          // session. Writing that through would hide the session from this
+          // request's own resolution, which then reads as "signed out" — a
+          // 429 would sign the person out (TASK-003i). Whether the removal
+          // reaches the browser is still decided by applySessionCookies.
+          if (!removesOnly) {
+            request.cookies.set(name, value);
+          }
         }
         pendingCookies.push(...cookiesToSet);
         for (const [headerName, headerValue] of Object.entries(headers)) {
