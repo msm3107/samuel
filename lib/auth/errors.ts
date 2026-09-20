@@ -1,4 +1,8 @@
-export type AuthenticationFailureCode = "session_missing" | "session_invalid";
+export type AuthenticationFailureCode =
+  | "session_missing"
+  | "session_invalid"
+  // Past the 7-day limit since the last sign-in (TASK-003h).
+  | "session_expired";
 
 /**
  * No trustworthy session: absent, expired beyond refresh, revoked, or
