@@ -34,3 +34,32 @@ export class SessionLookupError extends Error {
     super("The session could not be verified", options);
   }
 }
+
+/**
+ * The signed-in user may not do this in this organization. One code for every
+ * cause — not a member, a role too low, an organization that does not exist
+ * or was deleted, an unusable ID — so the response cannot reveal which
+ * organizations exist. The cause is logged server-side, never carried here.
+ */
+export class AuthorizationError extends Error {
+  override readonly name = "AuthorizationError";
+  readonly code = "organization_access_denied";
+
+  constructor() {
+    super("Not permitted in this organization");
+  }
+}
+
+/**
+ * The membership could not be read, so no decision was made either way. Kept
+ * apart from AuthorizationError so a database outage surfaces as an error
+ * with a reference code rather than as "access denied"; both fail closed.
+ */
+export class MembershipLookupError extends Error {
+  override readonly name = "MembershipLookupError";
+  readonly code = "membership_lookup_failed";
+
+  constructor(options?: ErrorOptions) {
+    super("The organization membership could not be verified", options);
+  }
+}

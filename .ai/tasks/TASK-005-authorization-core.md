@@ -19,6 +19,15 @@ TASK-002, TASK-004.
 - tests/unit/auth/**
 - tests/security/auth/**
 
+## Amendment: the real-database test runner
+
+`tests/security/auth/` is matched only by `vitest.config.ts`, which runs
+without a database, so a suite there cannot show the helper's membership read
+working under the real RLS policies. Adding `tests/security/auth/**/*.supabase.ts`
+to `vitest.supabase.config.ts` runs that suite in CI's existing real-Supabase
+job. Approved by Mikołaj Smoliniec (project owner), 2026-09-21, over testing
+with a fake database client only.
+
 ## Forbidden files
 
 - supabase/migrations/**
