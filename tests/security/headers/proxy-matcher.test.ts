@@ -1,5 +1,8 @@
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// The proxy now reaches the rate limiter, a server-only module.
+vi.mock("server-only", () => ({}));
 
 import { config } from "@/proxy";
 

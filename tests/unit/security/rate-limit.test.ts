@@ -180,6 +180,8 @@ describe("consumeRateLimit", () => {
       callbackGlobal: [40, 300, 0],
       callbackCeilingAlert: [1, 300, 0],
       sessionRefreshNetwork: [30, 300, 0],
+      sessionRefreshGlobal: [100, 300, 0],
+      sessionRefreshCeilingAlert: [1, 300, 0],
     });
   });
 });

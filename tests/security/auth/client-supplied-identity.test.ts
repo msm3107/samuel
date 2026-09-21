@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// The proxy now reaches the rate limiter, a server-only module.
+vi.mock("server-only", () => ({}));
+
 import type { headersCookieStore as HeadersCookieStore } from "./support/stub-auth-server";
 
 type CookieStore = ReturnType<typeof HeadersCookieStore>;
