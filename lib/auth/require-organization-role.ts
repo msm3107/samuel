@@ -16,10 +16,19 @@ import { requireSession } from "@/lib/auth/require-session";
 import { createResolvingSessionClient } from "@/lib/database/session-client";
 import { logger } from "@/lib/logging/logger";
 
+declare const organizationAccessBrand: unique symbol;
+
+/**
+ * Proof that the signed-in user holds `role` in `organizationId`. Branded, so
+ * the only way to get one without a cast is from the functions in this file.
+ * Code that records or acts on someone's behalf, such as the audit recorder,
+ * takes this rather than a user ID it would have to trust (TASK-006 review).
+ */
 export type OrganizationAccess = Readonly<{
   userId: string;
   organizationId: string;
   role: OrganizationRole;
+  readonly [organizationAccessBrand]: true;
 }>;
 
 export type MemberManagementAccess = OrganizationAccess &
@@ -80,7 +89,8 @@ export async function requireOrganizationRole({
     deny("insufficient_role", { ...access, role, minimumRole });
   }
 
-  return Object.freeze({ ...access, role });
+  // The one place an OrganizationAccess is made.
+  return Object.freeze({ ...access, role }) as OrganizationAccess;
 }
 
 /**

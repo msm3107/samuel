@@ -40,6 +40,11 @@ jobs:
       - name: Real-Supabase suites (Vitest)
         run: pnpm test:supabase
 
+      # pgTAP, run as the table owner: proves what the API's grants hide from
+      # the Vitest suites, such as the audit_events append-only trigger.
+      - name: Database suites (pgTAP)
+        run: pnpm test:db
+
       - name: Browser suite against the stub auth server
         run: pnpm test:e2e
 

@@ -24,9 +24,28 @@ session refresh would delete the person's session (review finding F2).
 - tests/integration/organizations/**
 - tests/security/tenant-isolation/**
 
+## Amendment: one migration
+
+Approved by Mikołaj Smoliniec (project owner), 2026-09-21. Creating an
+organization together with its owner membership needs one transaction. The
+Data API cannot run two inserts in one transaction, so it needs a database
+function. This task may add exactly one migration, holding only that
+function.
+
+Decided by Mikołaj Smoliniec (project owner), 2026-09-21, on the TASK-006
+review's recommendation: the function writes the `organization.created` and
+`member.added` audit rows in the same transaction. An audit failure inside
+one database function is a real database fault, and the event that
+establishes ownership can never go missing. The route therefore never
+builds an `OrganizationAccess` for a user who is not a member yet.
+
+- Allowed: one new file in `supabase/migrations/`, for the
+  create-organization function.
+- Still forbidden: changing any existing migration, table, policy or grant.
+
 ## Forbidden files
 
-- supabase/migrations/**
+- supabase/migrations/** (except the one migration above)
 - lib/auth/**
 - lib/security/**
 

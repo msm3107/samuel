@@ -20,6 +20,24 @@ TASK-004, TASK-005.
 - tests/integration/audit/**
 - tests/security/audit/**
 
+## Amendment: files outside the list
+
+Recorded under the owner's standing permission over files, given in chat on
+2026-09-21 by Mikołaj Smoliniec (project owner):
+
+- `vitest.supabase.config.ts` now runs every `tests/**/*.supabase.ts`
+  instead of a folder list. The suffix already chooses the runner, and this
+  was the third task to need a folder added.
+- `tests/unit/audit/**` holds the database-free schema tests.
+- From the review of PR #20:
+  - `supabase/tests/**` holds pgTAP tests, run by `pnpm test:db`
+    (`package.json`) and in the existing database job of
+    `.github/workflows/e2e.yml`.
+  - `lib/auth/require-organization-role.ts` brands `OrganizationAccess`.
+    `lib/auth/**` is otherwise forbidden here.
+  - `tests/support/organization-access.ts` holds the test-only helper for
+    that brand.
+
 ## Forbidden files
 
 - lib/auth/**
