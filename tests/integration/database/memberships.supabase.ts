@@ -154,45 +154,51 @@ describe("organizations and memberships schema constraints", () => {
     expect(reread.data?.id).toBe(ownerYMembership.id);
   });
 
-  it("lets only one of two owners win when each demotes the other at the same time", async () => {
+  // A missing lock lost this race about 1 time in 3 when run once, so one
+  // run could pass by luck. 20 fresh races miss it with probability
+  // (2/3)^20, about 0.03%.
+  it("lets only one of two owners win when each demotes the other at the same time, in each of 20 races", async () => {
     const ownerX = await fixtures.createUser();
     const ownerY = await fixtures.createUser();
-    const org = await fixtures.createOrganization({ ownerId: ownerX.id });
-    const ownerYMembership = await fixtures.addMember(
-      org.id,
-      ownerY.id,
-      "owner",
-    );
     const clientX = await fixtures.signedInClient(ownerX);
     const clientY = await fixtures.signedInClient(ownerY);
 
-    const [xDemotesY, yDemotesX] = await Promise.all([
-      clientX
-        .from("memberships")
-        .update({ role: "admin" })
-        .eq("id", ownerYMembership.id)
-        .select(),
-      clientY
-        .from("memberships")
-        .update({ role: "admin" })
-        .eq("id", org.ownerMembershipId)
-        .select(),
-    ]);
+    for (let race = 0; race < 20; race += 1) {
+      const org = await fixtures.createOrganization({ ownerId: ownerX.id });
+      const ownerYMembership = await fixtures.addMember(
+        org.id,
+        ownerY.id,
+        "owner",
+      );
 
-    // The organization row lock serializes the two: the second trigger sees
-    // the first demotion and refuses, or its USING clause no longer matches
-    // because its caller is no longer an owner.
-    const succeeded = [xDemotesY, yDemotesX].filter(
-      (result) => result.error === null && (result.data ?? []).length === 1,
-    );
-    expect(succeeded).toHaveLength(1);
+      const [xDemotesY, yDemotesX] = await Promise.all([
+        clientX
+          .from("memberships")
+          .update({ role: "admin" })
+          .eq("id", ownerYMembership.id)
+          .select(),
+        clientY
+          .from("memberships")
+          .update({ role: "admin" })
+          .eq("id", org.ownerMembershipId)
+          .select(),
+      ]);
 
-    const owners = await fixtures.admin
-      .from("memberships")
-      .select("id")
-      .eq("organization_id", org.id)
-      .eq("role", "owner");
-    expect(owners.data).toHaveLength(1);
+      // The organization row lock serializes the two: the second trigger
+      // sees the first demotion and refuses, or its USING clause no longer
+      // matches because its caller is no longer an owner.
+      const succeeded = [xDemotesY, yDemotesX].filter(
+        (result) => result.error === null && (result.data ?? []).length === 1,
+      );
+      expect(succeeded, `race ${race}`).toHaveLength(1);
+
+      const owners = await fixtures.admin
+        .from("memberships")
+        .select("id")
+        .eq("organization_id", org.id)
+        .eq("role", "owner");
+      expect(owners.data, `race ${race}`).toHaveLength(1);
+    }
   });
 
   it("removes an organization's memberships when the organization row is deleted", async () => {

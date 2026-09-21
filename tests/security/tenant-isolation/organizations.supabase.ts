@@ -365,6 +365,26 @@ describe("tenant isolation: organizations and memberships", () => {
     expect(reread.data?.user_id).toBe(userA.id);
   });
 
+  it("lets a member leave organization A by deleting their own membership", async () => {
+    const leaver = await fixtures.createUser();
+    const membership = await fixtures.addMember(orgA.id, leaver.id, "member");
+    const leaverClient = await fixtures.signedInClient(leaver);
+
+    const del = await leaverClient
+      .from("memberships")
+      .delete()
+      .eq("id", membership.id)
+      .select();
+    expect(del.error).toBeNull();
+    expect(del.data).toHaveLength(1);
+
+    const reread = await fixtures.admin
+      .from("memberships")
+      .select("id")
+      .eq("id", membership.id);
+    expect(reread.data).toEqual([]);
+  });
+
   it("does not let organization A's owner read it once it is soft-deleted", async () => {
     const softDelete = await fixtures.admin
       .from("organizations")
