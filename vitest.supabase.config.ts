@@ -9,14 +9,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: [
-      "tests/supabase/**/*.supabase.ts",
-      // Schema and RLS suites (TASK-004 onward) need a real database too.
-      "tests/integration/database/**/*.supabase.ts",
-      "tests/security/tenant-isolation/**/*.supabase.ts",
-      // The authorization helper's RLS-backed checks (TASK-005).
-      "tests/security/auth/**/*.supabase.ts",
-    ],
+    // The suffix decides the runner: every `*.supabase.ts` under tests/ needs
+    // a real database, wherever its folder (TASK-006 amendment).
+    include: ["tests/**/*.supabase.ts"],
     setupFiles: ["tests/supabase/support/require-local-supabase.ts"],
     restoreMocks: true,
     // Real network, real mail delivery: slower than the stubbed suites.

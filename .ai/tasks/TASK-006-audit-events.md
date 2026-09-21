@@ -20,6 +20,16 @@ TASK-004, TASK-005.
 - tests/integration/audit/**
 - tests/security/audit/**
 
+## Amendment: files outside the list
+
+Recorded under the owner's standing permission over files, given in chat on
+2026-09-21 by Mikołaj Smoliniec (project owner):
+
+- `vitest.supabase.config.ts` now runs every `tests/**/*.supabase.ts`
+  instead of a folder list. The suffix already chooses the runner, and this
+  was the third task to need a folder added.
+- `tests/unit/audit/**` holds the database-free schema tests.
+
 ## Forbidden files
 
 - lib/auth/**
