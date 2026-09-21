@@ -62,6 +62,29 @@ confirmed, 1 rejected as already-accepted in the contract.
 The rejected finding — a few networks can still reach the service-wide
 ceiling — is the residual risk this task's amendment already states.
 
+### The owner's review of PR #14 (2026-09-21) found two limiter bypasses
+
+Both come from the proxy's local cookie reading disagreeing with auth-js, so
+a refresh could skip the limit, or a limit be spent on a request that costs
+GoTrue nothing.
+
+1. **auth-js's 90-second margin was ignored.** auth-js refreshes an access
+   token that expires within `EXPIRY_MARGIN_MS` (90 s); the proxy counted it
+   as valid, so a crafted near-expiry cookie refreshed for free.
+2. **Cookies were reassembled differently from `@supabase/ssr`.** An empty
+   whole cookie in front of real chunks, a missing chunk index, and a lenient
+   base64 decoder each made the proxy read something other than what auth-js
+   reads.
+
+Fixed by removing the approximation: `sessionRefreshState` now reassembles and
+decodes with `@supabase/ssr`'s own `combineChunks` and `stringFromBase64URL`,
+parses as auth-js's `getItemAsync` does, accepts a session only when auth-js's
+`_isValidSession` would (all of `access_token`, `refresh_token`,
+`expires_at`), and applies the 90-second margin. Both bypasses have
+proxy-level tests that fail against the previous code and pass now; the unit
+tests pin each rule, using `@supabase/ssr`'s own `createChunks` and
+`stringToBase64URL` to build the cookies.
+
 ### Files changed
 
 - `lib/auth/session-expiry.ts` (new): reads the session cookie's `expires_at`
@@ -94,7 +117,7 @@ ceiling — is the residual risk this task's amendment already states.
 ### Tests
 
 - **security** (`tests/security/rate-limit/session-refresh-limit.test.ts`,
-  10): past the network limit and past the service-wide ceiling, no
+  12): past the network limit and past the service-wide ceiling, no
   auth-server call, 503, and no clearing cookie — on dashboard and
   non-dashboard paths; a valid session, a request without a session and three
   unreadable cookie values spend nothing; under both limits the refresh
@@ -102,7 +125,7 @@ ceiling — is the residual risk this task's amendment already states.
   refused request reaches handlers with no session cookie while the flow
   ticket and PKCE verifier stay, and an allowed one forwards the session
   untouched.
-- **unit** (`tests/unit/auth/session-expiry.test.ts`, 12): valid, expired and
+- **unit** (`tests/unit/auth/session-expiry.test.ts`, 21): valid, expired and
   exactly-now sessions; chunked cookies; PKCE verifier cookies ignored;
   unreadable values reported as no session; a decodable session with junk
   tokens still counted as a refresh.
@@ -115,9 +138,9 @@ ceiling — is the residual risk this task's amendment already states.
 
 - `pnpm typecheck`, `pnpm lint`, `pnpm format:check`: passed (with the owner's
   untracked `CODEX-SECURITY.md` set aside)
-- `pnpm test`: 596 passed
+- `pnpm test`: 612 passed
 - `pnpm test:integration`: 26 passed
-- `pnpm test:security`: 293 passed
+- `pnpm test:security`: 300 passed
 - `pnpm test:e2e`: 18 passed
 
 **Not run locally:** `pnpm test:supabase` and `pnpm test:e2e:supabase`, as

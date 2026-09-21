@@ -99,7 +99,7 @@ function applySecurityHeaders(
  * session is unverifiable: no auth-server call, and no cookie removed.
  */
 async function mayRefreshSession(request: NextRequest): Promise<boolean> {
-  if (sessionRefreshState(request.cookies) !== "refresh") {
+  if ((await sessionRefreshState(request.cookies)) !== "refresh") {
     return true;
   }
 

@@ -145,6 +145,40 @@ describe("security: refreshes are limited before they reach the auth server", ()
     );
   });
 
+  it.each([
+    [
+      "a session inside auth-js's 90-second refresh margin",
+      () => [sessionCookie(USER_A, { expiresInSeconds: 60 })],
+    ],
+    [
+      "an empty whole cookie in front of real chunks",
+      () => {
+        const whole = sessionCookie(USER_A, { expiresInSeconds: -60 });
+        const half = Math.ceil(whole.value.length / 2);
+        return [
+          { name: whole.name, value: "" },
+          { name: `${whole.name}.0`, value: whole.value.slice(0, half) },
+          { name: `${whole.name}.1`, value: whole.value.slice(half) },
+        ];
+      },
+    ],
+  ])(
+    "spends the allowance for %s, which auth-js refreshes (owner's review of #14)",
+    async (_label, cookies) => {
+      const { requests } = installStubAuthServer(
+        { mode: "normal", users: [USER_A], refreshedUsers: [REFRESHED_USER_A] },
+        { rateLimit: refusing(key("sessionRefreshNetwork", LOCAL_NETWORK)) },
+      );
+
+      const response = await proxy(
+        proxyRequest("/dashboard", { cookies: cookies() }),
+      );
+
+      expect(tokenRequests(requests)).toEqual([]);
+      expect(response.status).toBe(503);
+    },
+  );
+
   it("spends nothing on a session cookie it cannot read", async () => {
     // auth-js treats an undecodable cookie as no session and asks the auth
     // server for nothing, so it must not cost anyone their allowance.
