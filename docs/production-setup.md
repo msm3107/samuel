@@ -72,6 +72,12 @@ Until then, both exist only here.
   application's per-address spacing (TASK-003c) is set to the same value, so
   the application never forwards a request GoTrue would refuse.
 - Confirm email: off. Magic links confirm the address.
+- **Allow new users to sign up: on.** Accounts are created on first sign-in.
+  With sign-ups off, an unregistered address makes GoTrue answer
+  `signup_disabled`; the application hides that answer, but auth-js has
+  already stored and then dropped the PKCE cookie, so the response would
+  reveal that no account exists. The application logs
+  `magic_link_signups_disabled` at error level if it ever happens.
 - Email OTP expiry: `3600` seconds.
 
 **Rate limits** (per client IP; every request comes from the application's
