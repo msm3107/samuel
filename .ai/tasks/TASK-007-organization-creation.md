@@ -58,6 +58,15 @@ Decided by Mikołaj Smoliniec (project owner), 2026-09-21:
   the function, because it is callable through the Data API as well as the
   route. Past it the route answers 429.
 
+On the PR #21 review, same date:
+
+- **The slug suffix shows a slug was taken.** Accepted: slugs are public.
+- **The cap counts `organization.created` audit rows**, not current
+  ownership, so an ownership transfer cannot reset it. This needs one
+  partial index on `audit_events`, added in this task's migration. It is the
+  one change to an existing table this task makes, an exception to "still
+  forbidden" above.
+
 ## Amendment: files outside the list
 
 Allowed under the owner's standing permission (2026-09-21), recorded here:

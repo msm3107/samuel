@@ -41,18 +41,34 @@ well as through RLS.
      slugs, and so probably which companies, are customers (README §8).
    - Downside: some slugs have a random tail, and there is no way to change
      a slug yet.
+   - What still leaks (review finding 1): getting back `acme-3f2a1b`
+     shows that `acme` is taken, since the reserved list is public. Slugs
+     are public anyway (URLs, transparency pages), and each probe costs a
+     real organization within the hourly cap. Rejected: always adding a
+     suffix, which makes every slug uglier to hide little. Accepted by
+     Mikołaj Smoliniec (project owner), 2026-09-21.
 4. **At most 10 organizations per user per hour, enforced in the function**
    (owner, 2026-09-21).
-   - It counts organizations the user owns that were created in the last
-     hour. A per-user `pg_advisory_xact_lock` serializes one user's
-     creations, so twelve concurrent calls create exactly ten (tested, and
-     removing the lock fails that test). Other users are not held up.
+   - It counts the user's `organization.created` audit rows from the last
+     hour (review finding 3). Those rows can't be edited or deleted, so
+     transferring organizations away doesn't reset the count (pgTAP tests
+     this). The first version counted current ownership, which a future
+     ownership transfer could have dodged.
+   - A partial index on `audit_events (actor_user_id, created_at desc)`
+     where `event_type = 'organization.created'` serves the count. It
+     changes an existing table, so it is recorded as an amendment, approved
+     by the owner. Only creations are indexed, so other audit inserts pay
+     nothing for it.
+   - A per-user `pg_advisory_xact_lock` serializes one user's creations, so
+     twelve concurrent calls create exactly ten (tested, and removing the
+     lock fails that test). Other users are not held up.
    - The refusal is `SQLSTATE PT429`, which PostgREST answers as HTTP 429.
      The route maps it to 429 `organization_limit_reached`.
    - Rejected: a limit in `lib/security/rate-limit.ts`. It only covers the
      route, not a direct Data API call, and `lib/security` is forbidden
      here anyway.
-   - Downside: an organization that is hard-deleted stops counting.
+   - Downside: hard-deleting an organization cascades its audit rows, so
+     it stops counting. Only the service role can do that.
 5. **Reserved slugs are a constant array in the function** (owner,
    2026-09-21). A unit test reads it from the migration and asserts every
    top-level route under `app/` is on it. Adding a route folder without
@@ -76,6 +92,13 @@ well as through RLS.
    - **Bodies:** only `application/json`, which a cross-site HTML form
      cannot send. At most 4 KB, counted while the body is read, not taken
      from `Content-Length`.
+   - Known limits, both intended (review finding 5, documented in the
+     code):
+     - A deployment accepts only its own `NEXT_PUBLIC_APP_URL`, so a Vercel
+       preview must set its own.
+     - A client that is not a browser must send `Origin` itself.
+     - Neither may be "fixed" by trusting `Host` or `X-Forwarded-Host`,
+       which the request controls.
    - Rejected: keeping this in `features/organizations/`. Every later route
      needs the same, and two copies would drift.
 7. **Bodies are strict.** `{ name }` only. A body that also carries
@@ -103,8 +126,8 @@ well as through RLS.
 11. **Rename is included** (PATCH, owners and admins). The isolation
     requirement "cannot update organization B via the API" needs an update
     route to test. It isn't audited: there is no `organization.updated`
-    event type, and adding one means a migration to `audit_events`, which
-    this task may not change.
+    event type, and adding one means changing the event-type constraint on
+    `audit_events`.
 
 ### Files changed
 
@@ -194,7 +217,9 @@ well as through RLS.
   - a serializer passing the whole row fails 1;
   - a non-strict body schema fails 5 (real DB);
   - removing the advisory lock fails the concurrent-cap test (real DB);
-  - removing `on conflict … do nothing` fails 2 slug tests (real DB).
+  - removing `on conflict … do nothing` fails 2 slug tests (real DB);
+  - counting current ownership instead of audit rows fails the pgTAP
+    transfer test.
 
 ### Commands run
 
@@ -203,11 +228,18 @@ See the PR. Each gate was run with the owner's untracked
 
 ### Remaining concerns
 
-- **Renames aren't audited.** That needs a new event type, so a migration
-  on `audit_events`. Proposed for the member-management task, which touches
-  audit types anyway.
+- **Renames aren't audited**, so an admin can rename an organization
+  without leaving a trace. It needs a new event type. Proposed for the
+  member-management task, which touches audit types anyway. Accepted by
+  Mikołaj Smoliniec (project owner), 2026-09-21.
+- **Names may contain invisible Unicode format characters** (review finding
+  4): right-to-left overrides, zero-width spaces and similar. Such a name
+  could display as something else in invitation emails and reports. Not
+  fixed here and not accepted: refuse `\p{Cf}` except the zero-width joiner,
+  in Zod and in the function, before invitations ship.
 - **Slugs can't be changed** after creation, and some carry a random tail.
 - **The per-request client is still created twice** (session, then query).
-  This is the same TASK-005b note.
+  This is the same TASK-005b note. Accepted by Mikołaj Smoliniec (project
+  owner), 2026-09-21.
 - **Report generation has no route yet.** When it does, its suite must
   repeat the cross-tenant check at the HTTP layer.

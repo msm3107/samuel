@@ -9,12 +9,17 @@
 -- Decided by Mikołaj Smoliniec (project owner), 2026-09-21:
 --   * The slug is derived from the name, never chosen by the caller. When it
 --     is taken, or reserved, a random suffix is added in the same
---     transaction, so no caller is ever told "taken" and nobody can probe
---     which organizations exist (README §8).
+--     transaction, so a collision is never an error. A suffix still shows
+--     that the plain slug was taken or reserved. Slugs are public (they
+--     appear in URLs and on transparency pages), and each probe costs a real
+--     organization within the hourly cap. Accepted by Mikołaj Smoliniec
+--     (project owner), 2026-09-21.
 --   * Words the application uses, or may use, as routes are reserved.
 --   * One user creates at most 10 organizations an hour. The function is
 --     callable directly through the Data API, not only through the route, so
---     the cap lives here.
+--     the cap lives here. It counts the user's `organization.created` audit
+--     rows, which cannot be edited or deleted, so giving organizations away
+--     does not reset it.
 --   * The audit rows are written here, not by the application after the
 --     fact: the event that establishes ownership can never go missing.
 --
@@ -74,11 +79,10 @@ begin
 
   if (
     select count(*)
-    from public.memberships m
-    join public.organizations o on o.id = m.organization_id
-    where m.user_id = v_user_id
-      and m.role = 'owner'
-      and o.created_at > now() - interval '1 hour'
+    from public.audit_events
+    where actor_user_id = v_user_id
+      and event_type = 'organization.created'
+      and created_at > now() - interval '1 hour'
   ) >= c_hourly_cap then
     raise exception 'organization creation limit reached'
       using errcode = 'PT429';
@@ -150,6 +154,12 @@ begin
   );
 end;
 $$;
+
+-- The cap's count, without scanning every audit row. Partial: only creations
+-- are indexed, so other events pay nothing for it.
+create index audit_events_organization_created_by_actor_idx
+  on public.audit_events (actor_user_id, created_at desc)
+  where event_type = 'organization.created';
 
 comment on function public.create_organization(text) is
   'Creates an organization owned by the signed-in user, with its audit events. The only way to create one.';

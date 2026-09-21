@@ -6,7 +6,7 @@
 -- Runs with `pnpm test:db`; everything rolls back.
 begin;
 
-select plan(25);
+select plan(27);
 
 insert into auth.users (id, email)
 values
@@ -246,6 +246,31 @@ select is(
   10,
   'and was not created'
 );
+
+-- Giving the organizations away does not reset the cap: it counts creations,
+-- not current ownership.
+update public.memberships
+set user_id = '00000000-0000-4000-8000-00000000c001'
+where user_id = '00000000-0000-4000-8000-00000000c002';
+
+select is(
+  (
+    select count(*)::int from public.memberships
+    where user_id = '00000000-0000-4000-8000-00000000c002'
+  ),
+  0,
+  'the capped user now owns nothing'
+);
+
+select pg_temp.act_as('00000000-0000-4000-8000-00000000c002');
+
+select throws_ok(
+  $$ select public.create_organization('Pgtap Capped 12') $$,
+  'PT429', 'organization creation limit reached',
+  'and is still refused'
+);
+
+reset role;
 
 select * from finish();
 

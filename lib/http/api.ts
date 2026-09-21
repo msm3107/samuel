@@ -127,6 +127,15 @@ function databaseCodeOf(error: unknown): string | undefined {
  *
  * The session cookie is `SameSite=Lax` as well, but that still lets a sibling
  * subdomain send it, so it is not relied on alone.
+ *
+ * Two consequences, both intended (TASK-007 review):
+ * - A deployment answers only for its own `NEXT_PUBLIC_APP_URL`. A Vercel
+ *   preview must set its own, or its POST and PATCH requests are refused.
+ * - A client that is not a browser must send the `Origin` header itself.
+ *
+ * Do not "fix" either by comparing against the `Host` or `X-Forwarded-Host`
+ * header: the request controls both, which would make this check pass for
+ * any forged request.
  */
 export function assertSameOrigin(request: Request): void {
   const expected = new URL(serverEnv().NEXT_PUBLIC_APP_URL).origin;
