@@ -147,3 +147,84 @@ describe("an AI system's life", () => {
     ).toEqual(Array(4).fill("23505"));
   });
 });
+
+describe("every change is audited, however it was written (PR #22 review)", () => {
+  async function eventsFor(systemId: string) {
+    const { data } = await fixtures.admin
+      .from("audit_events")
+      .select("actor_user_id, event_type, entity_type, metadata")
+      .eq("entity_id", systemId)
+      .order("created_at")
+      .order("event_type");
+    return data ?? [];
+  }
+
+  it("a direct Data API insert, edit, archive and un-archive each leave an event naming the user", async () => {
+    const { data: created } = await create({
+      name: `Audited ${randomUUID().slice(0, 8)}`,
+      system_type: "chatbot",
+    });
+    const id = created?.id as string;
+
+    await client
+      .from("ai_systems")
+      .update({ system_type: "assistant", provider: "OpenAI" })
+      .eq("id", id);
+    await client.from("ai_systems").update({ status: "archived" }).eq("id", id);
+    await client.from("ai_systems").update({ status: "active" }).eq("id", id);
+
+    const events = await eventsFor(id);
+    expect(events.map(({ event_type }) => event_type)).toEqual([
+      "ai_system.created",
+      "ai_system.updated",
+      "ai_system.archived",
+      "ai_system.unarchived",
+    ]);
+    expect(new Set(events.map(({ actor_user_id }) => actor_user_id))).toEqual(
+      new Set([owner.id]),
+    );
+    expect(new Set(events.map(({ entity_type }) => entity_type))).toEqual(
+      new Set(["ai_system"]),
+    );
+    expect(events[1]?.metadata).toEqual({
+      fields: ["system_type", "provider"],
+    });
+  });
+
+  it("the service role, with no user to name, cannot create a system", async () => {
+    const name = `Service ${randomUUID().slice(0, 8)}`;
+
+    const { error } = await fixtures.admin.from("ai_systems").insert({
+      organization_id: organization.id,
+      name,
+      system_type: "other",
+    });
+
+    expect(error?.code).toBe("42501");
+    const { count } = await fixtures.admin
+      .from("ai_systems")
+      .select("id", { count: "exact", head: true })
+      .eq("name", name);
+    expect(count).toBe(0);
+  });
+
+  it("a failed audit write undoes the change: the refused service-role edit leaves the row as it was", async () => {
+    const { data: created } = await create({
+      name: `Untouched ${randomUUID().slice(0, 8)}`,
+      system_type: "chatbot",
+    });
+
+    const { error } = await fixtures.admin
+      .from("ai_systems")
+      .update({ description: "Changed by nobody" })
+      .eq("id", created?.id as string);
+
+    expect(error?.code).toBe("42501");
+    const { data } = await fixtures.admin
+      .from("ai_systems")
+      .select("description")
+      .eq("id", created?.id as string)
+      .single();
+    expect(data?.description).toBeNull();
+  });
+});

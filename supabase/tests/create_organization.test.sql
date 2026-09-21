@@ -6,7 +6,7 @@
 -- Runs with `pnpm test:db`; everything rolls back.
 begin;
 
-select plan(27);
+select plan(29);
 
 insert into auth.users (id, email)
 values
@@ -168,8 +168,22 @@ select throws_ok(
   '22023', 'the organization name is not acceptable',
   'a name with a control character is refused'
 );
+select throws_ok(
+  $$ select public.create_organization(U&'Acme\202Ecorp') $$,
+  '22023', 'the organization name is not acceptable',
+  'a name with a right-to-left override is refused (TASK-008)'
+);
 
 reset role;
+
+-- The table refuses the same characters, so a rename cannot store one either
+-- (TASK-008, PR #22 review finding 2).
+select throws_ok(
+  $$ update public.organizations set name = U&'Pgtap\200BAcme'
+     where id = (select (result ->> 'id')::uuid from created) $$,
+  '23514', null,
+  'a rename to a name with a zero-width space is refused by the table'
+);
 
 -- A failure after the organization insert ------------------------------------
 

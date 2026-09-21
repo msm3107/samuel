@@ -45,6 +45,20 @@ export const AUDIT_EVENTS = {
     }),
   },
   "ai_system.created": { entityType: "ai_system", metadata: noMetadata },
+  // Written by a database trigger (TASK-008): which columns changed, by
+  // name, never their values.
+  "ai_system.updated": {
+    entityType: "ai_system",
+    metadata: z.strictObject({
+      fields: z
+        .array(z.enum(["name", "description", "system_type", "provider"]))
+        .min(1)
+        .max(4)
+        .refine((fields) => new Set(fields).size === fields.length),
+    }),
+  },
+  "ai_system.archived": { entityType: "ai_system", metadata: noMetadata },
+  "ai_system.unarchived": { entityType: "ai_system", metadata: noMetadata },
   "deployment.created": { entityType: "deployment", metadata: noMetadata },
   "disclosure.published": { entityType: "disclosure", metadata: noMetadata },
   "report.generated": { entityType: "report", metadata: noMetadata },

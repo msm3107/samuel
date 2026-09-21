@@ -35,12 +35,48 @@ Decided by Mikołaj Smoliniec (project owner), 2026-09-21:
 - **Names** are unique within an organization among active systems,
   case-insensitively. An archived system's name can be reused.
 - **Writers** are members and up, matching `systems.manage`. Viewers read.
+- **Length limits** of 120 (name), 2000 (description) and 100 (provider)
+  characters, proposed by the implementer. Accepted by Mikołaj Smoliniec
+  (project owner), 2026-09-21.
+
+## Amendment: the PR #22 review
+
+Decided by Mikołaj Smoliniec (project owner), 2026-09-21:
+
+- **Auditing by trigger.** An after-insert and an after-update trigger write
+  `ai_system.created`, `ai_system.updated` (the changed column names, never
+  their values), `ai_system.archived` and `ai_system.unarchived` in the same
+  transaction as the change, however it was written. A write with no
+  signed-in user, the service role's included, is refused so every event has
+  an actor. This adds three event types to `audit_events`' CHECK constraint
+  and to `features/organizations/audit/audit-events.ts`.
+- **Format characters.** AI system names and providers, and organization
+  names, refuse Unicode format characters other than the zero-width joiner.
+  For organizations this is a second new migration that adds a table
+  constraint and replaces `create_organization`, and the name schema in
+  `features/organizations/organization.ts` changes to match.
+- **Fixed after insert.** A trigger keeps `created_at`, `id` and
+  `organization_id` unchanged for every writer short of the table owner
+  disabling it (review finding 3).
+
+Files this adds beyond the list above, recorded here. **The allowed-files
+list, original and amended, still awaits the owner's sign-off** (review
+finding 4):
+
+- `supabase/migrations/20260921170000_name_format_characters.sql` (new)
+- `features/organizations/audit/audit-events.ts`: three event types
+- `features/organizations/organization.ts`: format characters refused
+- `lib/validation/text.ts` (new): the shared character checks; the empty
+  folder's `.gitkeep` removed
+- `tests/unit/audit/audit-events.test.ts`: the drift test reads the latest
+  definition of each constraint across all migrations
+- `tests/unit/validation/text.test.ts` (new)
+- `supabase/tests/create_organization.test.sql`: two tests
 
 ## Forbidden files
 
-- Existing migrations, tables, policies and grants
-- lib/**
-- features/**
+- Existing migrations, tables, policies and grants, except as amended above
+- lib/** and features/**, except the files amended above
 - app/**
 
 ## Invariants
