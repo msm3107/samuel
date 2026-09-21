@@ -46,6 +46,7 @@ import { requestMagicLink } from "@/lib/auth/sign-in/request-magic-link";
 import { signOut } from "@/lib/auth/sign-in/sign-out";
 import { startGoogleSignIn } from "@/lib/auth/sign-in/start-google-sign-in";
 import { createServiceRoleClient } from "@/lib/database/service-role-client";
+import { lastSignInAt } from "@/lib/auth/session-age";
 import { serverEnv } from "@/lib/env/server-env";
 import proxy from "@/proxy";
 
@@ -225,6 +226,36 @@ describe("sign-in against local Supabase", () => {
       jar.set(name, value);
     }
     await expect(requireSession()).rejects.toBeInstanceOf(AuthenticationError);
+  });
+
+  it("carries the sign-in time in amr, and a refresh keeps it (TASK-003h)", async () => {
+    // The application ends a session 7 days after the newest amr timestamp.
+    // That only works if GoTrue puts it in every token and a refresh does not
+    // move it forward.
+    await signInThroughMailbox(freshAddress());
+    const session = readSession(jar);
+    const signedInAt = lastSignInAt(session.access_token);
+    expect(signedInAt).not.toBeNull();
+    expect(Math.abs((signedInAt ?? 0) - Date.now() / 1000)).toBeLessThan(120);
+
+    // Refreshes happen at least a second later, so a moved timestamp shows.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const refresh = await fetch(
+      `${serverEnv().SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,
+      {
+        method: "POST",
+        headers: {
+          apikey: serverEnv().SUPABASE_ANON_KEY,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ refresh_token: session.refresh_token }),
+      },
+    );
+    expect(refresh.status).toBe(200);
+    const refreshed = (await refresh.json()) as { access_token: string };
+
+    expect(refreshed.access_token).not.toBe(session.access_token);
+    expect(lastSignInAt(refreshed.access_token)).toBe(signedInAt);
   });
 
   it("refreshes an expired access token in the proxy and lets the dashboard through", async () => {

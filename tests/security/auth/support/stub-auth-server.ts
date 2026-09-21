@@ -10,15 +10,34 @@ import { serverEnv } from "@/lib/env/server-env";
  * none, and these suites run in CI.
  */
 
+/**
+ * An access token shaped like GoTrue's: a JWT whose payload carries the `amr`
+ * claim the application reads for the session's age (TASK-003h). Unsigned —
+ * the stub accepts it by exact match, as GoTrue accepts its own signature.
+ */
+export function stubAccessToken(
+  subject: string,
+  { signedInSecondsAgo = 60 * 60 }: { signedInSecondsAgo?: number } = {},
+) {
+  const encode = (value: object) =>
+    Buffer.from(JSON.stringify(value)).toString("base64url");
+  const signedInAt = Math.floor(Date.now() / 1000) - signedInSecondsAgo;
+  return [
+    encode({ alg: "HS256", typ: "JWT" }),
+    encode({ sub: subject, amr: [{ method: "otp", timestamp: signedInAt }] }),
+    encode({ stub: subject }),
+  ].join(".");
+}
+
 export const USER_A = {
   id: "0b6a2a4e-6f3c-4c1e-9d2a-2f6a1c9e8b11",
-  accessToken: "access-token-user-a",
+  accessToken: stubAccessToken("access-token-user-a"),
   refreshToken: "refresh-token-user-a",
 } as const;
 
 export const USER_B = {
   id: "7d1f0c3a-2b5e-4a8d-b6c9-4e3f2a1b0c22",
-  accessToken: "access-token-user-b",
+  accessToken: stubAccessToken("access-token-user-b"),
   refreshToken: "refresh-token-user-b",
 } as const;
 

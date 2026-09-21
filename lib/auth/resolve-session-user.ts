@@ -9,6 +9,8 @@ import {
   SessionLookupError,
   type AuthenticationFailureCode,
 } from "@/lib/auth/errors";
+import { isSessionExpired } from "@/lib/auth/session-age";
+import { logger } from "@/lib/logging/logger";
 
 export type SessionResolution =
   | { status: "authenticated"; userId: string }
@@ -28,8 +30,12 @@ const CREDENTIAL_REJECTION_STATUSES: ReadonlySet<number> = new Set([
 
 /**
  * Asks the auth server — not the cookie — who the session belongs to.
- * `getUser()` validates the access token remotely, so a forged or revoked token
- * is rejected; `getSession()` would trust the cookie's contents.
+ *
+ * `getSession()` reads the cookie and refreshes an expired access token; it
+ * trusts the cookie's contents, so it decides nothing. `getUser(jwt)` then
+ * validates that exact access token remotely, so a forged or revoked token is
+ * rejected, and only after that are the token's own claims read: the session
+ * is refused 7 days after its last sign-in (TASK-003h).
  *
  * Shared by the proxy and `requireSession()` so both classify failures the same
  * way. It takes an auth client, never an identity.
@@ -37,9 +43,23 @@ const CREDENTIAL_REJECTION_STATUSES: ReadonlySet<number> = new Set([
 export async function resolveSessionUser(
   auth: SupabaseClient["auth"],
 ): Promise<SessionResolution> {
+  let stored: Awaited<ReturnType<SupabaseClient["auth"]["getSession"]>>;
+  try {
+    stored = await auth.getSession();
+  } catch (error) {
+    throw new SessionLookupError({ cause: error });
+  }
+  if (stored.error) {
+    return classifyFailure(stored.error);
+  }
+  const accessToken = stored.data.session?.access_token;
+  if (!accessToken) {
+    return { status: "unauthenticated", reason: "session_missing" };
+  }
+
   let result: Awaited<ReturnType<SupabaseClient["auth"]["getUser"]>>;
   try {
-    result = await auth.getUser();
+    result = await auth.getUser(accessToken);
   } catch (error) {
     throw new SessionLookupError({ cause: error });
   }
@@ -47,13 +67,7 @@ export async function resolveSessionUser(
   const { data, error } = result;
 
   if (error) {
-    if (isAuthSessionMissingError(error)) {
-      return { status: "unauthenticated", reason: "session_missing" };
-    }
-    if (isRejectedCredential(error)) {
-      return { status: "unauthenticated", reason: "session_invalid" };
-    }
-    throw new SessionLookupError({ cause: error });
+    return classifyFailure(error);
   }
 
   // Third-party response: validated rather than trusted to be well-formed.
@@ -62,7 +76,23 @@ export async function resolveSessionUser(
     throw new SessionLookupError();
   }
 
+  // Read from the token the auth server has just accepted, never before.
+  if (isSessionExpired(accessToken)) {
+    logger.info({ event: "session_past_absolute_limit" });
+    return { status: "unauthenticated", reason: "session_expired" };
+  }
+
   return { status: "authenticated", userId: userId.data };
+}
+
+function classifyFailure(error: unknown): SessionResolution {
+  if (isAuthSessionMissingError(error)) {
+    return { status: "unauthenticated", reason: "session_missing" };
+  }
+  if (isRejectedCredential(error)) {
+    return { status: "unauthenticated", reason: "session_invalid" };
+  }
+  throw new SessionLookupError({ cause: error });
 }
 
 function isRejectedCredential(error: unknown) {
