@@ -39,6 +39,28 @@ Stacked on TASK-003f (PR #14) → TASK-003h (#13) → TASK-003g (#12).
    request can see them. A sign-in in progress keeps its PKCE verifier handling
    as auth-js does it.
 
+### What the pre-PR review found
+
+Security and contract reviewers raised four findings; the adversarial
+verifier stage could not run (the account's session limit was reached), so I
+checked each against the code myself. All four were real, and all are fixed:
+
+1. **A 503 trap.** "Did this request carry a session?" used a looser test
+   than auth-js's own `_isValidSession`, so a cookie holding only an
+   `expires_at` would turn every "no session" into "unverifiable": 503 on
+   every dashboard visit and a cookie nothing would clear. Fixed by the
+   owner's review of #14, which made the cookie reading match auth-js
+   exactly; two security tests pin it here (requireSession signs out, the
+   proxy redirects), and loosening the check fails 4 tests.
+2. **The blind chunk range was too small.** `@supabase/ssr` has no chunk
+   cap; sign-out now expires 20 chunk names (about 62 KB of session) plus any
+   visible chunk beyond that.
+3. **A required unit test was missing:** a batch that writes a new session and
+   removes stale chunks is applied at once, never held. Added, with tests for
+   holding, applying, and past-expiry removals.
+4. **A required real-Supabase test was missing:** a real refresh through
+   `requireSession` writes the new session. Added.
+
 ### Files changed
 
 - `lib/database/session-client.ts`: `createResolvingSessionClient` (holds
@@ -51,7 +73,9 @@ Stacked on TASK-003f (PR #14) → TASK-003h (#13) → TASK-003g (#12).
 - `lib/auth/sign-in/sign-out.ts`: expire the session cookies by name
 - `proxy.ts`: passes `hadStoredSession`
 - `.ai/tasks/TASK-003i-session-removal-outside-proxy.md` (amended)
-- `tests/security/auth/session-removal.test.ts` (new)
+- `tests/security/auth/session-removal.test.ts` (new),
+  `tests/unit/database/resolving-session-client.test.ts` (new),
+  `tests/supabase/auth/sign-in.supabase.ts`
 
 ### Security considerations
 
@@ -65,7 +89,8 @@ Stacked on TASK-003f (PR #14) → TASK-003h (#13) → TASK-003g (#12).
 
 ### Tests
 
-`tests/security/auth/session-removal.test.ts` (11):
+`tests/security/auth/session-removal.test.ts` (13), and
+`tests/unit/database/resolving-session-client.test.ts` (7):
 
 - resolving with a 429, 408 or 409 refresh failure deletes no session cookie
   and raises a lookup failure (5xx is left out on purpose: auth-js retries it
@@ -89,9 +114,9 @@ can see — which is what led to expiring the cookies by name.
 
 - `pnpm typecheck`, `pnpm lint`, `pnpm format:check`: passed (with the owner's
   untracked `CODEX-SECURITY.md` set aside)
-- `pnpm test`: 607 passed
+- `pnpm test`: 632 passed
 - `pnpm test:integration`: 26 passed
-- `pnpm test:security`: 304 passed
+- `pnpm test:security`: 313 passed
 - `pnpm test:e2e`: 18 passed
 
 **Not run locally:** `pnpm test:supabase` and `pnpm test:e2e:supabase`, as

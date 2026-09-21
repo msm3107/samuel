@@ -124,11 +124,14 @@ export async function createResolvingSessionClient() {
 }
 
 /**
- * `@supabase/ssr` splits a session across at most this many cookies. Expiring
- * the whole range costs a few bytes of response header and covers chunks this
- * request cannot see.
+ * How many chunk names sign-out expires blindly. `@supabase/ssr` has no cap of
+ * its own: it splits the session into as many ~3,180-byte cookies as it needs.
+ * A session here is a JWT plus the user object, which fits in one to three;
+ * twenty (about 62 KB) leaves ample room for richer metadata later, for a few
+ * hundred bytes of response headers on sign-out only. Chunks the request can
+ * see are expired whatever their index.
  */
-const MAX_SESSION_COOKIE_CHUNKS = 5;
+const MAX_SESSION_COOKIE_CHUNKS = 20;
 
 /**
  * Expires the session cookie and its chunks by name, whether or not this

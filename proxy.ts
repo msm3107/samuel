@@ -257,7 +257,8 @@ export default async function proxy(request: NextRequest) {
     : { supabase: null, applySessionCookies: () => {} };
   const session = supabase
     ? await resolveProxySessionState(supabase, {
-        hadStoredSession: sessionRefreshState(request.cookies) !== "none",
+        hadStoredSession:
+          (await sessionRefreshState(request.cookies)) !== "none",
       })
     : { state: "unverifiable" as const, error: new SessionLookupError() };
   const isDashboardRequest = isDashboardPath(request.nextUrl.pathname);

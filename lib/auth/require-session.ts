@@ -25,7 +25,7 @@ export type Session = Readonly<{ userId: string }>;
 export const requireSession = cache(async (): Promise<Session> => {
   const { supabase, applyHeldRemovals } = await createResolvingSessionClient();
   const resolution = await resolveSessionUser(supabase.auth, {
-    hadStoredSession: sessionRefreshState(await cookies()) !== "none",
+    hadStoredSession: (await sessionRefreshState(await cookies())) !== "none",
   });
 
   if (resolution.status === "unauthenticated") {

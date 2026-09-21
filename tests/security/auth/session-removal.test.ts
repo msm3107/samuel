@@ -150,6 +150,41 @@ describe("security: the proxy keeps a session it could not verify", () => {
   });
 });
 
+describe("security: a cookie auth-js would not accept is not a stored session", () => {
+  // Only a session auth-js would accept counts as "this request had one".
+  // Otherwise a cookie holding nothing but an expiry would turn every "no
+  // session" into "unverifiable": 503 on every dashboard visit, and a cookie
+  // nothing would ever clear (review of TASK-003i).
+  const partial = () => ({
+    name: sessionCookieName(),
+    value: `base64-${Buffer.from(JSON.stringify({ expires_at: 9_999_999_999 })).toString("base64url")}`,
+  });
+
+  it("resolves as signed out in requireSession, not as a lookup failure", async () => {
+    installStubAuthServer({ mode: "normal", users: [USER_A] });
+    const cookie = partial();
+    jar.set(cookie.name, cookie.value);
+
+    const error = await rejectionOf(requireSession());
+
+    expect(error).toBeInstanceOf(AuthenticationError);
+    expect(error).not.toBeInstanceOf(SessionLookupError);
+  });
+
+  it("sends a proxied dashboard request to sign-in instead of answering 503", async () => {
+    installStubAuthServer({ mode: "normal", users: [USER_A] });
+
+    const response = await proxy(
+      proxyRequest("/dashboard", { cookies: [partial()] }),
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3000/sign-in",
+    );
+  });
+});
+
 describe("security: signing out always signs out", () => {
   it("clears the session cookie even when the auth server fails", async () => {
     installStubAuthServer({ mode: "status", status: 500 });
