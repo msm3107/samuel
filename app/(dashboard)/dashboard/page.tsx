@@ -1,7 +1,11 @@
+import Link from "next/link";
+
+import { PRIMARY_BUTTON, TEXT_INPUT, TEXT_LINK } from "@/components/ui/styles";
 import { listOrganizations } from "@/features/organizations/organization-queries";
 import { requireDashboardSession } from "@/lib/auth/require-session";
 
 import { createOrganizationAction } from "./actions";
+import { systemsPath } from "./[organizationId]/systems/messages";
 import { createOrganizationMessage } from "./messages";
 
 /**
@@ -20,7 +24,7 @@ export default async function DashboardPage({
   const errorMessage = createOrganizationMessage((await searchParams).error);
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-24">
+    <main id="main" className="mx-auto max-w-2xl px-6 py-24">
       <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
 
       <section className="mt-10" aria-labelledby="organizations-heading">
@@ -35,7 +39,10 @@ export default async function DashboardPage({
           <ul className="mt-3 divide-y divide-slate-200 border-y border-slate-200">
             {organizations.map((organization) => (
               <li key={organization.id} className="py-3">
-                <span className="font-medium">{organization.name}</span>{" "}
+                {/* To the organization's AI systems (TASK-010). */}
+                <Link href={systemsPath(organization.id)} className={TEXT_LINK}>
+                  <bdi>{organization.name}</bdi>
+                </Link>{" "}
                 <span className="text-sm text-slate-500">
                   {organization.slug}
                 </span>
@@ -62,12 +69,9 @@ export default async function DashboardPage({
             aria-describedby={
               errorMessage === null ? undefined : "create-organization-error"
             }
-            className="flex-1 rounded border border-slate-300 px-3 py-2"
+            className={`flex-1 ${TEXT_INPUT}`}
           />
-          <button
-            type="submit"
-            className="rounded bg-slate-900 px-4 py-2 font-medium text-white"
-          >
+          <button type="submit" className={PRIMARY_BUTTON}>
             Create
           </button>
         </form>

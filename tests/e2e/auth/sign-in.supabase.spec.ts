@@ -79,25 +79,5 @@ test("closes the dashboard once the session cookies are gone", async ({
   await expect(page).toHaveURL(/\/sign-in$/);
 });
 
-// TASK-007: the dashboard's create form, through the real server action and
-// database function. The route and function are tested in depth elsewhere;
-// this proves the page, the action and the list work together.
-test("creates an organization from the dashboard and lists it", async ({
-  page,
-}) => {
-  const address = await requestLink(page);
-  await page.goto(await waitForMagicLink(address));
-  await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(
-    page.getByText("You are not in any organization yet"),
-  ).toBeVisible();
-
-  const name = `E2E Org ${randomUUID().slice(0, 8)}`;
-  await page.getByLabel("Organization name").fill(`  ${name}  `);
-  await page.getByRole("button", { name: "Create" }).click();
-
-  await expect(page).toHaveURL(/\/dashboard$/);
-  const list = page.getByRole("list");
-  await expect(list.getByText(name, { exact: true })).toBeVisible();
-  await expect(list).toContainText(name.toLowerCase().replaceAll(" ", "-"));
-});
+// The dashboard's organization form moved to
+// tests/e2e/dashboard/ai-systems.supabase.spec.ts, to share a sign-in.
