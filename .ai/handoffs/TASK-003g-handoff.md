@@ -47,6 +47,23 @@ per attempt, from many networks, can still reach the ceiling and hold new
 sign-ins at `sign_in_unavailable`; signed-in people keep working, which is
 what the ceiling reserves GoTrue's budget for. Recorded in the contract.
 
+### The owner's review of PR #12 (2026-09-21) found an enumeration channel
+
+**Confirmed, major:** the flow ticket was issued on a sent link and on the
+per-address limit, but not when GoTrue's answer is hidden as `link_sent` —
+`over_email_send_rate_limit` and `signup_disabled`. A follow-up callback with
+a junk code could then tell those apart from a sent link.
+
+- Fixed: the ticket is issued in one place, for every `link_sent` answer, so
+  no future path can miss it. A test covers all four paths; against the
+  original code exactly the two named paths fail.
+- **One layer deeper:** for `signup_disabled`, auth-js has already stored and
+  then dropped the PKCE cookie, so the response headers differ from a sent
+  link with or without a ticket. That answer can only happen with sign-ups
+  turned off, which this product never does (accounts are created on first
+  sign-in). It is now logged at error level as a misconfiguration, and
+  `docs/production-setup.md` requires sign-ups to stay on and says why.
+
 ### How GoTrue counts the callback (read from its source)
 
 `internal/api/token.go`: the `pkce`, `refresh_token` and `password` grants
@@ -105,9 +122,9 @@ network.
 - `pnpm typecheck`, `pnpm lint`: passed
 - `pnpm format:check`: passed (with the owner's untracked
   `CODEX-SECURITY.md` set aside)
-- `pnpm test`: 554 passed
+- `pnpm test`: 559 passed
 - `pnpm test:integration`: 26 passed
-- `pnpm test:security`: 277 passed
+- `pnpm test:security`: 282 passed
 - `pnpm build`: passed with CI's placeholder environment
 - `pnpm test:e2e`: 18 passed
 

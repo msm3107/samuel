@@ -302,6 +302,51 @@ describe("security: magic-link requests over a limit never reach Supabase Auth",
   });
 });
 
+describe("security: every link_sent answer carries the flow ticket", () => {
+  // A ticket on some answers and not others would let a follow-up callback
+  // tell a sent link from one GoTrue quietly refused (review of PR #12).
+  it.each([
+    ["a sent link", {}, false],
+    [
+      "GoTrue's own send throttle",
+      { otp: { status: 429, code: "over_email_send_rate_limit" } },
+      false,
+    ],
+    [
+      "sign-ups turned off",
+      { otp: { status: 422, code: "signup_disabled" } },
+      false,
+    ],
+    ["the per-address limit", {}, true],
+  ])("issues the ticket for %s", async (_label, auth, perAddressRefused) => {
+    installStubAuthServer(
+      { mode: "normal", users: [], ...auth },
+      perAddressRefused
+        ? { rateLimit: refusing(key("magicLinkAddress", EMAIL)) }
+        : {},
+    );
+
+    await expect(requestMagicLink(EMAIL)).resolves.toBe("link_sent");
+
+    expect(readFlowTicket(jar.get(FLOW_TICKET_COOKIE))).not.toBeNull();
+  });
+
+  it("raises an error-level alert when sign-ups are turned off", async () => {
+    installStubAuthServer({
+      mode: "normal",
+      users: [],
+      otp: { status: 422, code: "signup_disabled" },
+    });
+    const error = vi.spyOn(logger, "error");
+
+    await requestMagicLink(EMAIL);
+
+    expect(error).toHaveBeenCalledWith({
+      event: "magic_link_signups_disabled",
+    });
+  });
+});
+
 describe("security: the limiter fails closed", () => {
   it("refuses a magic link as unavailable when the limiter cannot answer", async () => {
     const { requests } = installServer({ rateLimit: "unavailable" });
