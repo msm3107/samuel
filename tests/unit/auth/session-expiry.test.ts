@@ -1,13 +1,16 @@
+import { createChunks, stringToBase64URL } from "@supabase/ssr";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import {
+  AUTH_JS_EXPIRY_MARGIN_MS,
   sessionCookieName,
   sessionRefreshState,
 } from "@/lib/auth/session-expiry";
 
-const NOW = 1_800_000_000;
+const NOW_MS = 1_800_000_000_000;
+const NOW = NOW_MS / 1000;
 
 function store(cookies: Record<string, string>) {
   return {
@@ -16,94 +19,148 @@ function store(cookies: Record<string, string>) {
   };
 }
 
+/** Encoded exactly as `@supabase/ssr` writes it. */
 function encoded(session: unknown) {
-  return `base64-${Buffer.from(JSON.stringify(session)).toString("base64url")}`;
+  return `base64-${stringToBase64URL(JSON.stringify(session))}`;
 }
 
-function sessionCookie(expiresAt: number) {
-  return { [sessionCookieName()]: encoded({ expires_at: expiresAt }) };
+function session(expiresAt: unknown) {
+  return {
+    access_token: "access",
+    refresh_token: "refresh",
+    expires_at: expiresAt,
+  };
 }
 
-describe("sessionRefreshState", () => {
-  it("reports no session when there is no cookie", () => {
-    expect(sessionRefreshState(store({}), NOW)).toBe("none");
+function cookieFor(value: unknown) {
+  return { [sessionCookieName()]: encoded(value) };
+}
+
+describe("sessionRefreshState: agreeing with auth-js on when it refreshes", () => {
+  it("uses auth-js's 90-second margin", () => {
+    expect(AUTH_JS_EXPIRY_MARGIN_MS).toBe(90_000);
   });
 
-  it("ignores cookies that only share the prefix, such as PKCE verifiers", () => {
-    const name = sessionCookieName();
-    expect(
-      sessionRefreshState(
-        store({
-          [`${name}-code-verifier`]: "verifier",
-          [`${name}-flow-abc-code-verifier`]: "verifier",
-          [`${name}-flows-code-verifier`]: "[]",
-        }),
-        NOW,
-      ),
-    ).toBe("none");
+  it("reports no session when there is no cookie", async () => {
+    await expect(sessionRefreshState(store({}), NOW_MS)).resolves.toBe("none");
   });
 
-  it("reports a valid session while its access token has not expired", () => {
-    expect(sessionRefreshState(store(sessionCookie(NOW + 60)), NOW)).toBe(
-      "valid",
-    );
+  it("reports a valid session outside the margin", async () => {
+    await expect(
+      sessionRefreshState(store(cookieFor(session(NOW + 91))), NOW_MS),
+    ).resolves.toBe("valid");
   });
 
   it.each([
     ["expired a minute ago", NOW - 60],
     ["expiring exactly now", NOW],
-  ])("reports a refresh for a session %s", (_label, expiresAt) => {
-    expect(sessionRefreshState(store(sessionCookie(expiresAt)), NOW)).toBe(
-      "refresh",
-    );
+    // auth-js refreshes these too; treating them as valid let a crafted
+    // near-expiry cookie refresh without spending any allowance.
+    ["expiring in 60 seconds, inside the margin", NOW + 60],
+    ["expiring in 89 seconds", NOW + 89],
+  ])("reports a refresh for a session %s", async (_label, expiresAt) => {
+    await expect(
+      sessionRefreshState(store(cookieFor(session(expiresAt))), NOW_MS),
+    ).resolves.toBe("refresh");
   });
 
-  it("reassembles a chunked session cookie", () => {
-    const name = sessionCookieName();
-    const value = encoded({ expires_at: NOW + 60 });
-    const half = Math.ceil(value.length / 2);
-
-    expect(
-      sessionRefreshState(
-        store({
-          [`${name}.1`]: value.slice(half),
-          [`${name}.0`]: value.slice(0, half),
-        }),
-        NOW,
-      ),
-    ).toBe("valid");
+  it("treats a missing expiry as not expired, as auth-js does", async () => {
+    await expect(
+      sessionRefreshState(store(cookieFor(session(0))), NOW_MS),
+    ).resolves.toBe("valid");
   });
 
   it.each([
-    ["a value that is not base64", "base64-!!!"],
-    [
-      "a payload that is not JSON",
-      `base64-${Buffer.from("{oops").toString("base64url")}`,
-    ],
-    ["JSON that is not a session", encoded({ hello: "world" })],
-    ["a text expiry", encoded({ expires_at: "soon" })],
-    ["an empty value", ""],
+    ["no access token", { refresh_token: "r", expires_at: NOW - 60 }],
+    ["no refresh token", { access_token: "a", expires_at: NOW - 60 }],
+    ["no expiry", { access_token: "a", refresh_token: "r" }],
+    ["an array", [1, 2, 3]],
+    ["a string", "session"],
   ])(
-    "reports no session for %s, which auth-js never sends to the auth server",
-    (_label, value) => {
-      expect(
-        sessionRefreshState(store({ [sessionCookieName()]: value }), NOW),
-      ).toBe("none");
+    "reports no session for JSON auth-js would not accept: %s",
+    async (_label, value) => {
+      await expect(
+        sessionRefreshState(store(cookieFor(value)), NOW_MS),
+      ).resolves.toBe("none");
     },
   );
+});
 
-  it("still reports a refresh for a decodable session whose tokens are junk", () => {
-    expect(
+describe("sessionRefreshState: reading the cookie as @supabase/ssr does", () => {
+  it("reassembles chunks written by @supabase/ssr", async () => {
+    const name = sessionCookieName();
+    const chunks = createChunks(name, encoded(session(NOW - 60)), 40);
+    expect(chunks.length).toBeGreaterThan(1);
+
+    await expect(
+      sessionRefreshState(
+        store(Object.fromEntries(chunks.map((c) => [c.name, c.value]))),
+        NOW_MS,
+      ),
+    ).resolves.toBe("refresh");
+  });
+
+  it("falls back to the chunks when the whole cookie is empty", async () => {
+    // @supabase/ssr ignores an empty whole cookie and reads the chunks; so
+    // does auth-js, and so it refreshes. Reading the empty value as "no
+    // session" let this skip the limit.
+    const name = sessionCookieName();
+    const chunks = createChunks(name, encoded(session(NOW - 60)), 40);
+
+    await expect(
       sessionRefreshState(
         store({
-          [sessionCookieName()]: encoded({
-            expires_at: NOW - 1,
-            access_token: "junk",
-            refresh_token: "junk",
-          }),
+          [name]: "",
+          ...Object.fromEntries(chunks.map((c) => [c.name, c.value])),
         }),
-        NOW,
+        NOW_MS,
       ),
-    ).toBe("refresh");
+    ).resolves.toBe("refresh");
+  });
+
+  it("stops at the first missing chunk index, as @supabase/ssr does", async () => {
+    const name = sessionCookieName();
+    const chunks = createChunks(name, encoded(session(NOW - 60)), 40);
+    const withGap = Object.fromEntries(
+      chunks.filter((_c, index) => index !== 1).map((c) => [c.name, c.value]),
+    );
+
+    // Only chunk 0 is read, which is not a whole session.
+    await expect(sessionRefreshState(store(withGap), NOW_MS)).resolves.toBe(
+      "none",
+    );
+  });
+
+  it("ignores cookies that only share the prefix, such as PKCE verifiers", async () => {
+    const name = sessionCookieName();
+    await expect(
+      sessionRefreshState(
+        store({
+          [`${name}-code-verifier`]: "verifier",
+          [`${name}-flow-abc-code-verifier`]: "verifier",
+        }),
+        NOW_MS,
+      ),
+    ).resolves.toBe("none");
+  });
+
+  it.each([
+    // stringFromBase64URL rejects these; a lenient decoder might not.
+    ["characters outside base64url", "base64-!!!"],
+    ["a payload that is not JSON", `base64-${stringToBase64URL("{oops")}`],
+    ["an empty value", ""],
+  ])("reports no session for %s", async (_label, value) => {
+    await expect(
+      sessionRefreshState(store({ [sessionCookieName()]: value }), NOW_MS),
+    ).resolves.toBe("none");
+  });
+
+  it("reads a plain JSON value without the base64 prefix, as @supabase/ssr does", async () => {
+    await expect(
+      sessionRefreshState(
+        store({ [sessionCookieName()]: JSON.stringify(session(NOW - 60)) }),
+        NOW_MS,
+      ),
+    ).resolves.toBe("refresh");
   });
 });
