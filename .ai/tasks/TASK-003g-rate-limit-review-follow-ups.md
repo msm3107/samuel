@@ -97,8 +97,8 @@ willing to start a real flow per attempt from many networks (IPv6 /64s are
 cheap) can still reach the ceiling and hold new sign-ins at
 `sign_in_unavailable`. The alternative — no ceiling — lets the same attacker
 exhaust GoTrue's bucket, which refuses refreshes too and takes signed-in
-people's dashboards down with it. Needs an `Accepted by <owner>, <date>` or a
-different instruction.
+people's dashboards down with it. Accepted by Mikołaj Smoliniec (project
+owner), 2026-09-21.
 
 ## Acceptance criteria
 

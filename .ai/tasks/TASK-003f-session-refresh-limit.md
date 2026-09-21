@@ -47,6 +47,16 @@ resolution, `lib/security/client-ip.ts`).
   per-network limit: nothing is deleted, and signed-in people whose access
   token is still valid are unaffected, because no refresh is needed for them.
 
+## Residual risk, for the project owner
+
+Past the service-wide ceiling, refreshes are refused for everyone: people whose
+access token has expired see dashboard paths answer 503 until the window
+passes, while people whose token is still valid keep working. Someone willing
+to spend refreshes from many networks can hold the ceiling. The alternative, no
+ceiling, lets the same traffic exhaust GoTrue's shared bucket, which refuses
+code exchanges too and so blocks new sign-ins as well. Accepted by Mikołaj
+Smoliniec (project owner), 2026-09-21.
+
 ## Invariants
 
 - **Checked before GoTrue.** The proxy decodes the session cookie's
