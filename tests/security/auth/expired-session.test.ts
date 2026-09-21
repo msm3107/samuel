@@ -31,6 +31,7 @@ import {
   proxyRequest,
   sessionCookie,
   sessionCookieName,
+  stubAccessToken,
   USER_A,
 } from "./support/stub-auth-server";
 
@@ -38,7 +39,7 @@ const SIGN_IN_URL = "http://localhost:3000/sign-in";
 
 const REFRESHED_USER_A = {
   ...USER_A,
-  accessToken: "refreshed-access",
+  accessToken: stubAccessToken("refreshed-access"),
   refreshToken: "refreshed-refresh",
 };
 
@@ -359,6 +360,95 @@ describe("security: an expired session is rejected", () => {
         sessionHeaders.every(isClearingSetCookie),
         `session Set-Cookie headers: ${JSON.stringify(sessionHeaders)}`,
       ).toBe(true);
+    });
+  });
+
+  describe("session past the 7-day limit since its last sign-in (TASK-003h)", () => {
+    const DAY = 24 * 60 * 60;
+
+    // The auth server still accepts these tokens: the application's own limit
+    // is what refuses them, on any hosted plan.
+    function userSignedIn(secondsAgo: number) {
+      return {
+        ...USER_A,
+        accessToken: stubAccessToken("aged-access", {
+          signedInSecondsAgo: secondsAgo,
+        }),
+      };
+    }
+
+    it("rejects the session in requireSession", async () => {
+      const aged = userSignedIn(7 * DAY + 60);
+      installStubAuthServer({ mode: "normal", users: [aged] });
+      useRequestCookies([sessionCookie(aged)]);
+
+      const error = await rejectionOf(requireSession());
+
+      expect(error).not.toBeInstanceOf(SessionLookupError);
+      expect(error).toMatchObject({ code: "session_expired" });
+    });
+
+    it("redirects a proxied dashboard request to sign-in", async () => {
+      const aged = userSignedIn(7 * DAY + 60);
+      installStubAuthServer({ mode: "normal", users: [aged] });
+
+      const response = await proxy(
+        proxyRequest("/dashboard", { cookies: [sessionCookie(aged)] }),
+      );
+
+      expectRedirectToSignIn(response);
+    });
+
+    it("redirects the dashboard layout to sign-in", async () => {
+      const aged = userSignedIn(7 * DAY + 60);
+      installStubAuthServer({ mode: "normal", users: [aged] });
+      useRequestCookies([sessionCookie(aged)]);
+
+      await expectLayoutRedirectsToSignIn();
+    });
+
+    it("still accepts a session signed in 6 days ago", async () => {
+      const recent = userSignedIn(6 * DAY);
+      installStubAuthServer({ mode: "normal", users: [recent] });
+      useRequestCookies([sessionCookie(recent)]);
+
+      await expect(requireSession()).resolves.toEqual({ userId: USER_A.id });
+    });
+
+    it("rejects an accepted token that carries no sign-in time", async () => {
+      const unreadable = { ...USER_A, accessToken: "accepted-opaque-token" };
+      installStubAuthServer({ mode: "normal", users: [unreadable] });
+      useRequestCookies([sessionCookie(unreadable)]);
+
+      const error = await rejectionOf(requireSession());
+
+      expect(error).toMatchObject({ code: "session_expired" });
+    });
+
+    it("keeps the age of a refreshed session from its original sign-in", async () => {
+      // A refresh adds no amr entry, so an aged session cannot refresh its way
+      // past the limit.
+      const aged = userSignedIn(7 * DAY + 60);
+      const refreshedAged = {
+        ...aged,
+        accessToken: stubAccessToken("aged-refreshed", {
+          signedInSecondsAgo: 7 * DAY + 60,
+        }),
+        refreshToken: "aged-refreshed-refresh",
+      };
+      installStubAuthServer({
+        mode: "normal",
+        users: [aged],
+        refreshedUsers: [refreshedAged],
+      });
+
+      const response = await proxy(
+        proxyRequest("/dashboard", {
+          cookies: [sessionCookie(aged, { expiresInSeconds: -60 })],
+        }),
+      );
+
+      expectRedirectToSignIn(response);
     });
   });
 

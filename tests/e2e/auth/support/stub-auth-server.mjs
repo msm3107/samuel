@@ -10,10 +10,29 @@ import { E2E_RATE_LIMIT_HMAC_SECRET } from "./e2e-env.mjs";
 
 const PORT = Number(process.argv[2] ?? 54400);
 
+/**
+ * Shaped like GoTrue's access token: a JWT whose `amr` claim gives the sign-in
+ * time the application reads for the session's age (TASK-003h). Unsigned; the
+ * stub accepts it by exact match.
+ */
+function stubAccessToken() {
+  const encode = (value) =>
+    Buffer.from(JSON.stringify(value)).toString("base64url");
+  const signedInAt = Math.floor(Date.now() / 1000);
+  return [
+    encode({ alg: "HS256", typ: "JWT" }),
+    encode({
+      sub: "e2e-user",
+      amr: [{ method: "otp", timestamp: signedInAt }],
+    }),
+    encode({ stub: "e2e" }),
+  ].join(".");
+}
+
 export const E2E_USER = {
   id: "0b6a2a4e-6f3c-4c1e-9d2a-2f6a1c9e8b11",
   email: "e2e-user@example.test",
-  accessToken: "e2e-access-token",
+  accessToken: stubAccessToken(),
   refreshToken: "e2e-refresh-token",
 };
 

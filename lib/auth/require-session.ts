@@ -1,10 +1,12 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import { AuthenticationError } from "@/lib/auth/errors";
 import { SIGN_IN_PATH } from "@/lib/auth/protected-routes";
 import { resolveSessionUser } from "@/lib/auth/resolve-session-user";
-import { createSessionClient } from "@/lib/database/session-client";
+import { sessionRefreshState } from "@/lib/auth/session-expiry";
+import { createResolvingSessionClient } from "@/lib/database/session-client";
 
 export type Session = Readonly<{ userId: string }>;
 
@@ -21,10 +23,16 @@ export type Session = Readonly<{ userId: string }>;
  * the auth-server round trip. Outside a server render there is no memoization.
  */
 export const requireSession = cache(async (): Promise<Session> => {
-  const supabase = await createSessionClient();
-  const resolution = await resolveSessionUser(supabase.auth);
+  const { supabase, applyHeldRemovals } = await createResolvingSessionClient();
+  const resolution = await resolveSessionUser(supabase.auth, {
+    hadStoredSession: (await sessionRefreshState(await cookies())) !== "none",
+  });
 
   if (resolution.status === "unauthenticated") {
+    // A verdict, so the session really is finished: let auth-js's cookie
+    // removals through. A lookup failure throws instead and keeps them held,
+    // so a 429 or an outage never signs anyone out (TASK-003i).
+    applyHeldRemovals();
     throw new AuthenticationError(resolution.reason);
   }
 
