@@ -1,3 +1,4 @@
+import { issueFlowTicket } from "@/lib/auth/sign-in/flow-ticket";
 import type { GoogleSignInResult } from "@/lib/auth/sign-in/result-codes";
 import { callbackUrl } from "@/lib/auth/sign-in/urls";
 import { createSessionClient } from "@/lib/database/session-client";
@@ -55,6 +56,7 @@ export async function startGoogleSignIn(
     return { status: "unavailable" };
   }
 
+  await issueFlowTicket();
   return { status: "redirect", url: data.url };
 }
 

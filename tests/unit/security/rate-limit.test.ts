@@ -5,6 +5,7 @@ vi.mock("server-only", () => ({}));
 import { serverEnv } from "@/lib/env/server-env";
 import {
   consumeRateLimit,
+  RATE_LIMIT_TIMEOUT_MS,
   RATE_LIMITS,
   RateLimitUnavailableError,
   rateLimitKey,
@@ -127,6 +128,37 @@ describe("consumeRateLimit", () => {
     ).rejects.toBeInstanceOf(RateLimitUnavailableError);
   });
 
+  it("abandons a database call that hangs, as unavailable", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          (_input: RequestInfo | URL, init?: RequestInit) =>
+            new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () =>
+                reject(init.signal?.reason),
+              );
+            }),
+        ),
+      );
+
+      const outcome = consumeRateLimit("magicLinkNetwork", "203.0.113.7").then(
+        () => "resolved",
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(RATE_LIMIT_TIMEOUT_MS + 10);
+
+      await expect(outcome).resolves.toBeInstanceOf(RateLimitUnavailableError);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("gives up after 2 seconds", () => {
+    expect(RATE_LIMIT_TIMEOUT_MS).toBe(2000);
+  });
+
   it("keeps the documented limits", () => {
     // A change here changes what an attacker can send; it must be deliberate.
     expect(
@@ -138,10 +170,15 @@ describe("consumeRateLimit", () => {
       ),
     ).toEqual({
       magicLinkNetwork: [5, 600, 0],
+      magicLinkNetworkCap: [30, 600, 0],
       magicLinkAddress: [3, 600, 60],
       magicLinkGlobal: [200, 3600, 0],
-      googleStartNetwork: [10, 600, 0],
-      callbackNetwork: [20, 600, 0],
+      magicLinkThresholdAlert: [1, 300, 0],
+      googleStartNetwork: [30, 600, 0],
+      callbackNetwork: [60, 600, 0],
+      callbackTicket: [1, 3600, 0],
+      callbackGlobal: [40, 300, 0],
+      callbackCeilingAlert: [1, 300, 0],
       sessionRefreshNetwork: [30, 300, 0],
     });
   });

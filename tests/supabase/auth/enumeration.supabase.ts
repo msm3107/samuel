@@ -26,6 +26,10 @@ vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({
   cookies: async () => ({
     getAll: () => [...jar].map(([name, value]) => ({ name, value })),
+    get: (name: string) => {
+      const value = jar.get(name);
+      return value === undefined ? undefined : { name, value };
+    },
     set: (name: string, value: string) => {
       jar.set(name, value);
     },

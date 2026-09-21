@@ -58,6 +58,11 @@ import {
   requestMagicLinkAction,
   startGoogleSignInAction,
 } from "@/lib/auth/sign-in/actions";
+import {
+  FLOW_TICKET_COOKIE,
+  issueFlowTicket,
+  readFlowTicket,
+} from "@/lib/auth/sign-in/flow-ticket";
 import { requestMagicLink } from "@/lib/auth/sign-in/request-magic-link";
 import { startGoogleSignIn } from "@/lib/auth/sign-in/start-google-sign-in";
 import { logger } from "@/lib/logging/logger";
@@ -168,7 +173,8 @@ function spyOnLogger() {
 }
 
 describe("security: magic-link requests over a limit never reach Supabase Auth", () => {
-  it("refuses a network over its limit at once, without the response floor", async () => {
+  it("asks a busy network for the challenge instead of refusing it, without the floor", async () => {
+    // Offices and mobile carriers share one address (TASK-003g).
     const { requests, rateLimitCalls } = installServer({
       rateLimit: refusing(key("magicLinkNetwork", LOCAL_NETWORK)),
     });
@@ -177,12 +183,61 @@ describe("security: magic-link requests over a limit never reach Supabase Auth",
       requestMagicLinkAction(null, form({ email: EMAIL })),
     );
 
-    expect(result).toEqual({ result: "rate_limited" });
+    expect(result).toEqual({ result: "captcha_required" });
     expect(authRequests(requests)).toEqual([]);
     expect(elapsedMs).toBeLessThan(WITHOUT_FLOOR_MS);
-    // Checked first: a refused network spends no global allowance.
+    // A busy network spends none of the global allowance.
     expect(rateLimitCalls.map((call) => call.key)).toEqual([
+      key("magicLinkNetworkCap", LOCAL_NETWORK),
       key("magicLinkNetwork", LOCAL_NETWORK),
+    ]);
+  });
+
+  it("lets a busy network through with a solved challenge", async () => {
+    const { requests } = installServer({
+      rateLimit: refusing(key("magicLinkNetwork", LOCAL_NETWORK)),
+    });
+    const siteverify = stubSiteverify(TEST_KEY_PASS);
+
+    const { result } = await timed(() =>
+      requestMagicLinkAction(
+        null,
+        form({
+          email: EMAIL,
+          [TURNSTILE_RESPONSE_FIELD]: "XXXX.DUMMY.TOKEN.XXXX",
+        }),
+      ),
+    );
+
+    expect(result).toEqual({ result: "link_sent" });
+    expect(siteverify.map((call) => call.get("response"))).toEqual([
+      "XXXX.DUMMY.TOKEN.XXXX",
+    ]);
+    expect(authRequests(requests)).toHaveLength(1);
+  });
+
+  it("refuses a network past its cap at once, even with a solved challenge", async () => {
+    const { requests, rateLimitCalls } = installServer({
+      rateLimit: refusing(key("magicLinkNetworkCap", LOCAL_NETWORK)),
+    });
+    const siteverify = stubSiteverify(TEST_KEY_PASS);
+
+    const { result, elapsedMs } = await timed(() =>
+      requestMagicLinkAction(
+        null,
+        form({
+          email: EMAIL,
+          [TURNSTILE_RESPONSE_FIELD]: "XXXX.DUMMY.TOKEN.XXXX",
+        }),
+      ),
+    );
+
+    expect(result).toEqual({ result: "rate_limited" });
+    expect(authRequests(requests)).toEqual([]);
+    expect(siteverify).toEqual([]);
+    expect(elapsedMs).toBeLessThan(WITHOUT_FLOOR_MS);
+    expect(rateLimitCalls.map((call) => call.key)).toEqual([
+      key("magicLinkNetworkCap", LOCAL_NETWORK),
     ]);
   });
 
@@ -193,10 +248,11 @@ describe("security: magic-link requests over a limit never reach Supabase Auth",
 
     await expect(requestMagicLink(EMAIL)).resolves.toBe("link_sent");
     expect(authRequests(requests)).toEqual([]);
-    // No flow was started, so a link already sent keeps its verifier. This
-    // also means the response sets no verifier cookie where a sent link would:
-    // accepted residual risk, see the TASK-003c contract.
-    expect([...jar.keys()]).toEqual([]);
+    // No PKCE flow was started, so a link already sent keeps its verifier.
+    // The flow ticket is issued either way, so the only difference from a sent
+    // link is the verifier cookie: accepted residual risk, see the TASK-003c
+    // contract.
+    expect([...jar.keys()]).toEqual([FLOW_TICKET_COOKIE]);
   });
 
   it("holds a repeated address to the same response floor as a sent link", async () => {
@@ -225,6 +281,7 @@ describe("security: magic-link requests over a limit never reach Supabase Auth",
     await requestMagicLinkAction(null, form({ email: EMAIL }));
 
     expect(rateLimitCalls.slice(1).map((call) => call.key)).toEqual([
+      key("magicLinkNetworkCap", LOCAL_NETWORK),
       key("magicLinkNetwork", LOCAL_NETWORK),
       key("magicLinkGlobal", GLOBAL),
       key("magicLinkAddress", EMAIL),
@@ -242,6 +299,51 @@ describe("security: magic-link requests over a limit never reach Supabase Auth",
     expect(rateLimitCalls).toEqual([]);
     expect(authRequests(requests)).toEqual([]);
     expect(elapsedMs).toBeLessThan(WITHOUT_FLOOR_MS);
+  });
+});
+
+describe("security: every link_sent answer carries the flow ticket", () => {
+  // A ticket on some answers and not others would let a follow-up callback
+  // tell a sent link from one GoTrue quietly refused (review of PR #12).
+  it.each([
+    ["a sent link", {}, false],
+    [
+      "GoTrue's own send throttle",
+      { otp: { status: 429, code: "over_email_send_rate_limit" } },
+      false,
+    ],
+    [
+      "sign-ups turned off",
+      { otp: { status: 422, code: "signup_disabled" } },
+      false,
+    ],
+    ["the per-address limit", {}, true],
+  ])("issues the ticket for %s", async (_label, auth, perAddressRefused) => {
+    installStubAuthServer(
+      { mode: "normal", users: [], ...auth },
+      perAddressRefused
+        ? { rateLimit: refusing(key("magicLinkAddress", EMAIL)) }
+        : {},
+    );
+
+    await expect(requestMagicLink(EMAIL)).resolves.toBe("link_sent");
+
+    expect(readFlowTicket(jar.get(FLOW_TICKET_COOKIE))).not.toBeNull();
+  });
+
+  it("raises an error-level alert when sign-ups are turned off", async () => {
+    installStubAuthServer({
+      mode: "normal",
+      users: [],
+      otp: { status: 422, code: "signup_disabled" },
+    });
+    const error = vi.spyOn(logger, "error");
+
+    await requestMagicLink(EMAIL);
+
+    expect(error).toHaveBeenCalledWith({
+      event: "magic_link_signups_disabled",
+    });
   });
 });
 
@@ -283,6 +385,7 @@ describe("security: the limiter fails closed", () => {
 
   it("refuses the callback exchange when the limiter cannot answer", async () => {
     const { requests } = installServer({ rateLimit: "unavailable" });
+    await issueFlowTicket();
 
     const response = await callback(
       new NextRequest(`http://localhost:3000/auth/callback?code=${AUTH_CODE}`),
@@ -325,10 +428,28 @@ describe("security: Google sign-in and the callback are limited per network", ()
     );
   });
 
+  it("refuses the callback past the service-wide ceiling without calling GoTrue", async () => {
+    const { requests } = installServer({
+      rateLimit: refusing(key("callbackGlobal", GLOBAL)),
+    });
+    await issueFlowTicket();
+
+    const response = await callback(
+      new NextRequest(`http://localhost:3000/auth/callback?code=${AUTH_CODE}`),
+    );
+
+    // Not the visitor's network, so not "rate_limited".
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3000/sign-in?error=sign_in_unavailable",
+    );
+    expect(authRequests(requests)).toEqual([]);
+  });
+
   it("refuses the callback exchange over the limit", async () => {
     const { requests } = installServer({
       rateLimit: refusing(key("callbackNetwork", LOCAL_NETWORK)),
     });
+    await issueFlowTicket();
 
     const response = await callback(
       new NextRequest(`http://localhost:3000/auth/callback?code=${AUTH_CODE}`),
@@ -340,8 +461,120 @@ describe("security: Google sign-in and the callback are limited per network", ()
     expect(authRequests(requests)).toEqual([]);
   });
 
+  it("spends nothing and calls no GoTrue for callbacks without a flow ticket", async () => {
+    // The review of #9-#11: without this, a flood of bare callback URLs could
+    // spend the service-wide ceiling and refuse everyone else's sign-in.
+    const { requests, rateLimitCalls } = installServer();
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await callback(
+        new NextRequest(
+          `http://localhost:3000/auth/callback?code=${AUTH_CODE}`,
+        ),
+      );
+      expect(response.headers.get("location")).toBe(
+        "http://localhost:3000/sign-in?error=link_other_browser",
+      );
+    }
+
+    expect(rateLimitCalls).toEqual([]);
+    expect(authRequests(requests)).toEqual([]);
+  });
+
+  it("refuses a forged flow ticket the same way", async () => {
+    const { requests, rateLimitCalls } = installServer();
+    jar.set(
+      FLOW_TICKET_COOKIE,
+      `${Math.floor(Date.now() / 1000)}.${"a".repeat(32)}.${"b".repeat(64)}`,
+    );
+
+    const response = await callback(
+      new NextRequest(`http://localhost:3000/auth/callback?code=${AUTH_CODE}`),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3000/sign-in?error=link_other_browser",
+    );
+    expect(rateLimitCalls).toEqual([]);
+    expect(authRequests(requests)).toEqual([]);
+  });
+
+  it("lets one ticket buy one exchange, and refuses a replay of its value", async () => {
+    await issueFlowTicket();
+    const ticket = jar.get(FLOW_TICKET_COOKIE) ?? "";
+    const nonce = readFlowTicket(ticket) ?? "";
+    let ticketAllowed = true;
+    const { requests, rateLimitCalls } = installServer({
+      rateLimit: (call) => {
+        if (call.key === key("callbackTicket", nonce)) {
+          const allowed = ticketAllowed;
+          ticketAllowed = false;
+          return allowed;
+        }
+        return true;
+      },
+    });
+
+    await callback(
+      new NextRequest(`http://localhost:3000/auth/callback?code=${AUTH_CODE}`),
+    );
+    const goTrueCallsAfterFirst = authRequests(requests).length;
+
+    // The cookie is gone after the first exchange; an attacker replays its
+    // value.
+    jar.set(FLOW_TICKET_COOKIE, ticket);
+    const replay = await callback(
+      new NextRequest(`http://localhost:3000/auth/callback?code=${AUTH_CODE}`),
+    );
+
+    expect(replay.headers.get("location")).toBe(
+      "http://localhost:3000/sign-in?error=link_invalid",
+    );
+    expect(authRequests(requests)).toHaveLength(goTrueCallsAfterFirst);
+    // The replay spent no service-wide allowance.
+    expect(
+      rateLimitCalls.filter(
+        (call) => call.key === key("callbackGlobal", GLOBAL),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("logs the ceiling alert once per window, not once per callback", async () => {
+    const alertKey = key("callbackCeilingAlert", GLOBAL);
+    let alertAllowed = true;
+    installServer({
+      rateLimit: (call) => {
+        if (call.key === alertKey) {
+          const allowed = alertAllowed;
+          alertAllowed = false;
+          return allowed;
+        }
+        return call.key !== key("callbackGlobal", GLOBAL);
+      },
+    });
+    const error = vi.spyOn(logger, "error");
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await issueFlowTicket();
+      await callback(
+        new NextRequest(
+          `http://localhost:3000/auth/callback?code=${AUTH_CODE}`,
+        ),
+      );
+    }
+
+    expect(
+      error.mock.calls.filter(
+        ([entry]) =>
+          (entry as { event?: string }).event ===
+          "callback_global_ceiling_reached",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("spends no callback allowance on a malformed code", async () => {
     const { rateLimitCalls } = installServer();
+    await issueFlowTicket();
 
     await callback(
       new NextRequest("http://localhost:3000/auth/callback?code=junk"),
@@ -364,7 +597,7 @@ describe("security: client networks", () => {
     await requestMagicLinkAction(null, form({ email: EMAIL }));
 
     const [first, second, third] = rateLimitCalls.map((call) => call.key);
-    expect(first).toBe(key("magicLinkNetwork", "2001:db8:1:2::/64"));
+    expect(first).toBe(key("magicLinkNetworkCap", "2001:db8:1:2::/64"));
     expect(second).toBe(first);
     expect(third).not.toBe(first);
   });
@@ -374,7 +607,9 @@ describe("security: client networks", () => {
 
     await requestMagicLinkAction(null, form({ email: EMAIL }));
 
-    expect(rateLimitCalls[0]?.key).toBe(key("magicLinkNetwork", LOCAL_NETWORK));
+    expect(rateLimitCalls[0]?.key).toBe(
+      key("magicLinkNetworkCap", LOCAL_NETWORK),
+    );
   });
 
   it("sends only digests to the database and logs no address or IP", async () => {
@@ -485,14 +720,31 @@ describe("security: past the global threshold, a challenge rather than a refusal
     expect(siteverify).toEqual([]);
   });
 
-  it("raises an alert-level log past the threshold", async () => {
-    installServer({ rateLimit: overThreshold });
+  it("raises the alert-level log once per window, not once per request", async () => {
+    const alertKey = key("magicLinkThresholdAlert", GLOBAL);
+    let alertAllowed = true;
+    installServer({
+      rateLimit: (call) => {
+        if (call.key === alertKey) {
+          const allowed = alertAllowed;
+          alertAllowed = false;
+          return allowed;
+        }
+        return overThreshold(call);
+      },
+    });
     const error = vi.spyOn(logger, "error");
 
-    await requestMagicLinkAction(null, form({ email: EMAIL }));
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await requestMagicLinkAction(null, form({ email: EMAIL }));
+    }
 
-    expect(error).toHaveBeenCalledWith({
-      event: "magic_link_global_threshold_exceeded",
-    });
+    expect(
+      error.mock.calls.filter(
+        ([entry]) =>
+          (entry as { event?: string }).event ===
+          "magic_link_global_threshold_exceeded",
+      ),
+    ).toHaveLength(1);
   });
 });

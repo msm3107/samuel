@@ -1,6 +1,7 @@
 import { isAuthApiError } from "@supabase/supabase-js";
 
 import { parseEmail } from "@/lib/auth/sign-in/email";
+import { issueFlowTicket } from "@/lib/auth/sign-in/flow-ticket";
 import type { MagicLinkResult } from "@/lib/auth/sign-in/result-codes";
 import { callbackUrl } from "@/lib/auth/sign-in/urls";
 import { createSessionClient } from "@/lib/database/session-client";
@@ -40,6 +41,12 @@ const INVALID_ADDRESS_CODES: ReadonlySet<string> = new Set([
  * response floor, because unlike the checks before it, it depends on the
  * address.
  *
+ * Every `link_sent` answer carries the same flow ticket (TASK-003g), whatever
+ * produced it: a sent link, the per-address limit, or an answer from GoTrue
+ * that is hidden because it would reveal whether an account exists. A ticket
+ * on some of those and not others would let a follow-up callback tell them
+ * apart.
+ *
  * Must run where cookies can be written (a server action or route handler):
  * the PKCE verifier is stored in a cookie now and read back by the callback.
  */
@@ -51,6 +58,14 @@ export async function requestMagicLink(
     return "invalid_email";
   }
 
+  const result = await sendMagicLink(email);
+  if (result === "link_sent") {
+    await issueFlowTicket();
+  }
+  return result;
+}
+
+async function sendMagicLink(email: string): Promise<MagicLinkResult> {
   let allowed: boolean;
   try {
     allowed = await consumeRateLimit("magicLinkAddress", email);
@@ -85,6 +100,16 @@ export async function requestMagicLink(
   }
 
   const code = isAuthApiError(error) ? error.code : undefined;
+  if (code === "signup_disabled") {
+    // Only an unregistered address can produce this, so it must never
+    // happen: this product creates accounts on first sign-in. If sign-ups are
+    // turned off on the project, the answer can be hidden but not the PKCE
+    // cookie auth-js stored and then dropped, so the response would reveal
+    // that no account exists. Error level: it is a misconfiguration
+    // (docs/production-setup.md), not traffic.
+    logger.error({ event: "magic_link_signups_disabled" });
+    return "link_sent";
+  }
   if (code && SILENTLY_NOT_SENT_CODES.has(code)) {
     // Never the address: an operator needs to see the throttle, not who hit it.
     logger.warn({ event: "magic_link_not_sent", code });

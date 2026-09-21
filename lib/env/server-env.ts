@@ -90,6 +90,15 @@ const serverEnvSchema = z
     // Cloudflare's published test keys pass every challenge. The local
     // production-build suites use them, on loopback only.
     if (!LOOPBACK_HOSTS.has(new URL(env.NEXT_PUBLIC_APP_URL).hostname)) {
+      // Client networks are read from Vercel's header only on Vercel; anywhere
+      // else every visitor would share one rate-limit bucket (TASK-003g).
+      if (env.VERCEL !== "1") {
+        context.addIssue({
+          code: "custom",
+          path: ["VERCEL"],
+          message: "must be 1 in production: deploy on Vercel",
+        });
+      }
       if (TURNSTILE_TEST_SITE_KEYS.has(env.TURNSTILE_SITE_KEY)) {
         context.addIssue({
           code: "custom",
