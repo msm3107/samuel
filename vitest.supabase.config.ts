@@ -14,6 +14,8 @@ export default defineConfig({
       // Schema and RLS suites (TASK-004 onward) need a real database too.
       "tests/integration/database/**/*.supabase.ts",
       "tests/security/tenant-isolation/**/*.supabase.ts",
+      // The authorization helper's RLS-backed checks (TASK-005).
+      "tests/security/auth/**/*.supabase.ts",
     ],
     setupFiles: ["tests/supabase/support/require-local-supabase.ts"],
     restoreMocks: true,
