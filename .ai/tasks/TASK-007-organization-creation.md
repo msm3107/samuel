@@ -75,6 +75,10 @@ Allowed under the owner's standing permission (2026-09-21), recorded here:
   `tests/security/auth/unauthenticated-dashboard.test.ts`: the dashboard page
   now takes `searchParams` and lists organizations. The authenticated test
   gets a fixed list in place of the database; no assertion was removed.
+- `tests/e2e/auth/support/stub-auth-server.mjs`: answers the dashboard's
+  organization query with an empty list, for the stub session only.
+- `tests/e2e/auth/sign-in.supabase.spec.ts`: one new test that creates an
+  organization through the dashboard form against real Supabase.
 
 ## Forbidden files
 

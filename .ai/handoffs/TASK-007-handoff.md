@@ -143,6 +143,12 @@ well as through RLS.
     `tests/security/auth/unauthenticated-dashboard.test.ts`: the page's new
     props, and a fixed organization list in place of the database. No
     assertion was removed, and one was added (the list renders).
+- `tests/e2e/auth/support/stub-auth-server.mjs`: the stub answers the
+  dashboard's organization query (an empty list, for the stub session only).
+  Without it the stub browser suite failed in CI, because the dashboard now
+  queries the database.
+- `tests/e2e/auth/sign-in.supabase.spec.ts`: signs in by real magic link,
+  creates an organization through the form, and sees it listed.
 - `.ai/tasks/TASK-007-organization-creation.md`: the owner's answers and the
   out-of-contract files
 
@@ -179,6 +185,9 @@ well as through RLS.
     `requireOrganizationPermission("reports.generate")` against the real
     database, and "act for" through the rename route.
   - An unauthenticated creation fails: 401, nothing created.
+- Browser, real Supabase: sign in by magic link, see the empty state, and
+  create an organization through the form with its name padded with spaces.
+  It is listed trimmed, with its slug.
 - Mutation checks, each reverted:
   - removing the Origin check fails 4 tests;
   - reading the body before the session fails 1;
@@ -194,10 +203,6 @@ See the PR. Each gate was run with the owner's untracked
 
 ### Remaining concerns
 
-- **The dashboard form was not exercised in a browser.** The page render is
-  tested, and the server action calls the same tested function. A
-  Playwright flow needs a signed-in session through Mailpit, which fits
-  better with the E2E work.
 - **Renames aren't audited.** That needs a new event type, so a migration
   on `audit_events`. Proposed for the member-management task, which touches
   audit types anyway.
