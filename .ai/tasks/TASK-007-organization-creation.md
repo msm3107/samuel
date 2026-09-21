@@ -43,6 +43,52 @@ builds an `OrganizationAccess` for a user who is not a member yet.
   create-organization function.
 - Still forbidden: changing any existing migration, table, policy or grant.
 
+## Amendment: the open questions, answered
+
+Decided by Mikołaj Smoliniec (project owner), 2026-09-21:
+
+- **Slugs:** the server derives the slug from the name and never reports a
+  collision. A taken or reserved slug gets a random six-character suffix in
+  the same transaction. The acceptance line on concurrent requests is
+  amended below to match: there is no "slug taken" error to be
+  deterministic about.
+- **Reserved slugs:** a list in the create function. A test keeps it in step
+  with `app/`'s top-level routes.
+- **Abuse cap:** a user creates at most 10 organizations an hour, enforced in
+  the function, because it is callable through the Data API as well as the
+  route. Past it the route answers 429.
+
+On the PR #21 review, same date:
+
+- **The slug suffix shows a slug was taken.** Accepted: slugs are public.
+- **The cap counts `organization.created` audit rows**, not current
+  ownership, so an ownership transfer cannot reset it. This needs one
+  partial index on `audit_events`, added in this task's migration. It is the
+  one change to an existing table this task makes, an exception to "still
+  forbidden" above.
+
+## Amendment: files outside the list
+
+Allowed under the owner's standing permission (2026-09-21), recorded here:
+
+- `lib/http/api.ts` (new): the JSON API error format, the same-origin
+  check and bounded body reading. Every later API route needs the same, so
+  it is not organization code.
+- `tests/unit/organizations/**` (new): name, serializer, form messages, and
+  the reserved-slug drift test.
+- `supabase/tests/create_organization.test.sql` (new): pgTAP.
+- `package.json`: `--passWithNoTests` removed from `test:security`, as this
+  task requires.
+- `app/api/.gitkeep`: removed, the folder now has routes.
+- `tests/integration/auth/authenticated-dashboard.test.ts` and
+  `tests/security/auth/unauthenticated-dashboard.test.ts`: the dashboard page
+  now takes `searchParams` and lists organizations. The authenticated test
+  gets a fixed list in place of the database; no assertion was removed.
+- `tests/e2e/auth/support/stub-auth-server.mjs`: answers the dashboard's
+  organization query with an empty list, for the stub session only.
+- `tests/e2e/auth/sign-in.supabase.spec.ts`: one new test that creates an
+  organization through the dashboard form against real Supabase.
+
 ## Forbidden files
 
 - supabase/migrations/** (except the one migration above)
@@ -77,7 +123,9 @@ builds an `OrganizationAccess` for a user who is not a member yet.
 
 - A signed-in user can create an organization and is its owner.
 - Two concurrent requests for the same slug produce one organization and one
-  deterministic error, not two rows or a 500.
+  deterministic error, not two rows or a 500. _Amended above: concurrent
+  requests for the same name each produce an organization, exactly one with
+  the plain slug and no two sharing one; never a 500._
 - Every §8 isolation check fails through the API route, not only through RLS.
 - `pnpm test:security` runs real assertions; `--passWithNoTests` is removed
   from the script in this task.

@@ -20,7 +20,7 @@
     "test:watch": "vitest",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration --passWithNoTests",
-    "test:security": "vitest run tests/security --passWithNoTests",
+    "test:security": "vitest run tests/security",
     "hooks:install": "simple-git-hooks",
     "ci": "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build",
     "test:e2e": "node tests/e2e/auth/support/build-e2e-app.mjs && playwright test",

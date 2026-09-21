@@ -19,12 +19,10 @@ import {
  *   - read:      "user A cannot read org B" below.
  *   - update:    "user A cannot update org B" below.
  *   - enumerate: "user A cannot enumerate org B ids" below.
- * The other two don't exist yet at this layer:
- *   - "generate reports for org B" has no feature yet; once it does, it is
- *     application code sitting on top of this RLS, so it reduces to the
- *     read check above — its own suite belongs with that feature.
- *   - "access org B through API routes" has no route yet; a later task's
- *     route tests should assert this at the HTTP layer.
+ * The other two are application-level, in organizations-api.supabase.ts
+ * (TASK-007): all five checks through the API routes, and "generate reports
+ * for org B" through the permission check that report generation will use.
+ * Reports themselves need their own suite once the feature exists.
  */
 
 const fixtures = createTenantFixtures();

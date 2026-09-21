@@ -121,6 +121,16 @@ createServer(async (request, response) => {
     );
   }
 
+  // The dashboard lists the user's organizations (TASK-007). The stub user
+  // belongs to none, so the page renders its empty state; only a request
+  // carrying the stub session's token is answered, as RLS would require.
+  if (request.method === "GET" && url.pathname === "/rest/v1/organizations") {
+    const token = (request.headers.authorization ?? "").replace(/^Bearer /, "");
+    return token === E2E_USER.accessToken
+      ? send(response, 200, [])
+      : send(response, 401, { code: "PGRST301", message: "JWT invalid" });
+  }
+
   if (request.method === "GET" && url.pathname === "/auth/v1/user") {
     const token = (request.headers.authorization ?? "").replace(/^Bearer /, "");
     return token === E2E_USER.accessToken

@@ -132,11 +132,27 @@ export function createTenantFixtures() {
    * order here is load-bearing.
    */
   async function cleanup(): Promise<void> {
-    if (organizationIds.length > 0) {
+    // Organizations the fixtures inserted, plus any a test user created
+    // through the application (TASK-007), which the fixtures never saw.
+    const toDelete = new Set(organizationIds);
+    if (userIds.length > 0) {
+      const { data, error } = await admin
+        .from("memberships")
+        .select("organization_id")
+        .in("user_id", userIds);
+      if (error) {
+        throw error;
+      }
+      for (const { organization_id } of data) {
+        toDelete.add(organization_id as string);
+      }
+    }
+
+    if (toDelete.size > 0) {
       const { error } = await admin
         .from("organizations")
         .delete()
-        .in("id", organizationIds);
+        .in("id", [...toDelete]);
       if (error) {
         throw error;
       }

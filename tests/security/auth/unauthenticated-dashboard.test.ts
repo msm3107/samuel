@@ -290,7 +290,7 @@ describe("security: unauthenticated dashboard request redirects and reveals noth
       let rendered: unknown = "page did not resolve";
       let thrown: unknown;
       try {
-        rendered = await DashboardPage();
+        rendered = await DashboardPage({ searchParams: Promise.resolve({}) });
       } catch (error) {
         thrown = error;
       }
