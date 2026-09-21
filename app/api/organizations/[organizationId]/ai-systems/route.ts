@@ -29,8 +29,8 @@ export async function GET(request: Request, { params }: RouteContext) {
         permission: "organization.read",
       });
       const filter = parseStatusFilter(request);
-      const aiSystems = await listAiSystems(access, filter);
-      return jsonResponse({ aiSystems });
+      const { aiSystems, truncated } = await listAiSystems(access, filter);
+      return jsonResponse({ aiSystems, truncated });
     },
   );
 }

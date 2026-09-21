@@ -163,9 +163,7 @@ See the PR. Each gate was run with the owner's untracked
 
 ### Remaining concerns
 
-- **The allowed-files list awaits the owner's sign-off** (review finding 4).
-  The length limits were accepted by Mikołaj Smoliniec (project owner),
-  2026-09-21.
+- The allowed-files list and the length limits are signed off. Accepted by Mikołaj Smoliniec (project owner), 2026-09-21.
 - **TASK-009 must map the database's refusals**: `23505` on create and on
   un-archive, `23514` for a value its Zod schema should have caught, and
   `42501` from RLS.

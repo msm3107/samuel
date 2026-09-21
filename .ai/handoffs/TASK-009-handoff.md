@@ -6,8 +6,9 @@ Members can list, read, create, edit, archive and un-archive their
 organization's AI systems through four route handlers, on top of TASK-008's
 table, row-level security and audit triggers. Viewers read.
 
-There was no TASK-009 contract, so this task adds one. Its decisions are
-the implementer's and await the owner's review.
+There was no TASK-009 contract, so this task adds one. Its seven
+decisions were proposed by the implementer and accepted on the PR #23
+review. Accepted by Mikołaj Smoliniec (project owner), 2026-09-21.
 
 ### Decisions
 
@@ -57,8 +58,9 @@ the implementer's and await the owner's review.
      adding one.
 7. **Plain UUIDs**, not README §67's optional `sys_…` IDs. Organizations
    already expose UUIDs, and two ID styles in one API is worse than either.
-   This is worth an owner decision before the public widget ships, since
-   public IDs matter most there.
+   Random UUIDs are already unguessable, which is what matters for
+   security. Settled on the review: the widget won't expose
+   `ai_systems.id`, but will get its own revocable public key.
 8. **Strict bodies.**
    - A creation carrying `organizationId`, `id`, `status`, timestamps or any
      unknown field gets a 400, as does an edit carrying `organizationId` or
@@ -70,9 +72,22 @@ the implementer's and await the owner's review.
 9. **`?status=active|archived|all`, active by default.** A repeated or
    unknown value is a 400, as ambiguous parameters are in the sign-in
    callback.
-10. **Lists are capped at 200**, ordered by name then ID. There's no
-    pagination until an organization gets near that.
-11. **Defence in depth on writes.**
+10. **Lists are capped at 200**, ordered by name then ID, and say so.
+    The query asks for 201 rows; if it gets them, the response has the first
+    200 and `truncated: true` (review finding 1). There's no pagination until
+    an organization gets near that.
+11. **Text is normalized to NFC** (review finding 2; owner, 2026-09-21).
+    - "Café" typed as `e` plus a combining accent becomes the precomposed
+      four characters, so two spellings of one name can't both pass the
+      unique index (tested against the real database).
+    - This covers system names, providers, descriptions and organization
+      names.
+    - The length is counted after normalizing, as the table counts it.
+    - The database doesn't check NFC yet. Owner's decision: an
+      `is nfc normalized` CHECK comes with the next migration that touches
+      these tables. Until then, a direct Data API write can still store the
+      decomposed form.
+12. **Defence in depth on writes.**
     - The route checks `systems.manage`.
     - The query functions refuse an `OrganizationAccess` whose role is too
       low (as in `organization-queries.ts`).
@@ -93,13 +108,16 @@ the implementer's and await the owner's review.
 - `lib/validation/text.ts`: the `allowLineBreaks` option. This is out of
   contract, recorded here.
 - Tests:
-  - `tests/unit/ai-systems/ai-system.test.ts` (new): 40 tests
-  - `tests/security/ai-systems/ai-systems-api.test.ts` (new): 14 tests,
+  - `tests/unit/ai-systems/ai-system.test.ts` (new): 43 tests
+  - `tests/security/ai-systems/ai-systems-api.test.ts` (new): 16 tests,
     fake database
+  - `tests/unit/organizations/organization.test.ts`: one NFC test
   - `tests/security/ai-systems/ai-systems-api.supabase.ts` (new): 13 tests,
     real database
-  - `tests/integration/ai-systems/ai-systems-api.supabase.ts` (new): 7
+  - `tests/integration/ai-systems/ai-systems-api.supabase.ts` (new): 8
     tests, real database
+- `features/organizations/organization.ts`: NFC. Out of contract, recorded
+  in the contract's amendment.
 
 ### Security considerations
 
@@ -122,7 +140,9 @@ the implementer's and await the owner's review.
   - updating by ID alone does the same;
   - a non-strict creation body fails 6 fake-suite and 4 real-database tests;
   - dropping the `23505` mapping fails 1 fake-suite and 2 real-database
-    tests.
+    tests;
+  - dropping NFC fails 3 unit tests and 1 real-database test;
+  - a `truncated` that is always false fails 1 fake-suite test.
 - The first two show the layering. The application's organization filter
   and RLS each stop the leak on their own, so the fake suite is what
   guards the application's layer.
@@ -134,10 +154,17 @@ See the PR. Each gate was run with the owner's untracked
 
 ### Remaining concerns
 
-- **The contract's decisions await the owner's review**, as do TASK-008's
-  allowed files.
-- **Public IDs (README §67)** are worth deciding before the widget and the
-  transparency page expose system IDs publicly.
+- **A database NFC check** is owed with the next migration that touches
+  `ai_systems` or `organizations` (owner's decision).
+- **For the widget phase:**
+  - The widget should not expose `ai_systems.id`. It should get its own
+    public key, which can be rotated or revoked without touching the
+    system (review).
+  - Descriptions keep Unicode format characters on purpose, since they're
+    prose. Public text must therefore be rendered in direction-isolating
+    markup (`dir="auto"` or `<bdi>`), so one right-to-left override can't
+    reorder the page around it (review finding 4).
 - **A role lowered between the check and an edit** is answered 404, not
   403, because RLS on update filters rather than errors. The edit is
-  refused either way.
+  refused either way, and leaks nothing. The code comment now says so
+  (review finding 3).

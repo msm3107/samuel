@@ -199,3 +199,35 @@ describe("serializeAiSystem", () => {
     expect(() => serializeAiSystem({ id: "x" })).toThrow();
   });
 });
+
+describe("names are stored in Unicode's composed form (PR #23 review)", () => {
+  const COMBINING_ACUTE = String.fromCodePoint(0x301);
+  const decomposed = `Cafe${COMBINING_ACUTE} Bot`;
+  const composed = `Caf${String.fromCodePoint(0xe9)} Bot`;
+
+  it("a decomposed name becomes the composed one", () => {
+    const parsed = createAiSystemSchema.parse({
+      name: decomposed,
+      systemType: "chatbot",
+      provider: decomposed,
+    });
+
+    expect(parsed.name).toBe(composed);
+    expect(parsed.provider).toBe(composed);
+  });
+
+  it("an edit's name is composed too", () => {
+    expect(updateAiSystemSchema.parse({ name: decomposed }).name).toBe(
+      composed,
+    );
+  });
+
+  it("the length is counted after composing, as the table counts it", () => {
+    const atLimit = `${"e".repeat(119)}e${COMBINING_ACUTE}`;
+
+    expect(
+      createAiSystemSchema.safeParse({ name: atLimit, systemType: "other" })
+        .success,
+    ).toBe(true);
+  });
+});

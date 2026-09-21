@@ -305,6 +305,45 @@ describe("refusals come before any AI system query", () => {
   });
 });
 
+describe("a list says when it was cut short (PR #23 review)", () => {
+  async function listed() {
+    const response = await listSystems(
+      apiRequest("GET", `/api/organizations/${ORG}/ai-systems?status=all`),
+      collectionContext(),
+    );
+    return (await response.json()) as {
+      aiSystems: unknown[];
+      truncated: boolean;
+    };
+  }
+
+  function rows(count: number) {
+    return Array.from({ length: count }, (_unused, index) => ({
+      ...ROW,
+      id: `9a8b7c6d-5e4f-4a3b-8c2d-${index.toString(16).padStart(12, "0")}`,
+      name: `System ${index}`,
+    }));
+  }
+
+  it("200 systems: all of them, not truncated", async () => {
+    state.aiSystemsResult = { data: rows(200), error: null };
+
+    const body = await listed();
+
+    expect(body.aiSystems).toHaveLength(200);
+    expect(body.truncated).toBe(false);
+  });
+
+  it("more than 200: the first 200, and truncated", async () => {
+    state.aiSystemsResult = { data: rows(201), error: null };
+
+    const body = await listed();
+
+    expect(body.aiSystems).toHaveLength(200);
+    expect(body.truncated).toBe(true);
+  });
+});
+
 describe("what reaches the client", () => {
   it("six fields, whatever else the database returns", async () => {
     state.aiSystemsResult = {

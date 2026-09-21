@@ -12,6 +12,9 @@ import { hasControlCharacter, hasFormatCharacter } from "@/lib/validation/text";
 export const organizationNameSchema = z
   .string()
   .trim()
+  // Composed form, so look-alike spellings of one name are one name
+  // (PR #23 review, finding 2).
+  .normalize("NFC")
   .min(1)
   .max(120)
   .refine((name) => !hasControlCharacter(name) && !hasFormatCharacter(name))

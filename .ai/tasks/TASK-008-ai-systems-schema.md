@@ -59,9 +59,9 @@ Decided by Mikołaj Smoliniec (project owner), 2026-09-21:
   `organization_id` unchanged for every writer short of the table owner
   disabling it (review finding 3).
 
-Files this adds beyond the list above, recorded here. **The allowed-files
-list, original and amended, still awaits the owner's sign-off** (review
-finding 4):
+Files this adds beyond the list above, recorded here. The allowed-files
+list, original and amended, was signed off on the PR #23 review (review
+finding 4). Accepted by Mikołaj Smoliniec (project owner), 2026-09-21.
 
 - `supabase/migrations/20260921170000_name_format_characters.sql` (new)
 - `features/organizations/audit/audit-events.ts`: three event types

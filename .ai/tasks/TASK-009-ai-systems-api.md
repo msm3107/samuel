@@ -39,7 +39,9 @@ TASK-008 (`ai_systems`, its RLS, its audit triggers and
 | GET    | `/api/organizations/[organizationId]/ai-systems/[systemId]`                   | `organization.read` |
 | PATCH  | `/api/organizations/[organizationId]/ai-systems/[systemId]`                   | `systems.manage`    |
 
-## Decisions (implementer, 2026-09-21, awaiting the owner's review)
+## Decisions
+
+Proposed by the implementer; all seven accepted on the PR #23 review. Accepted by Mikołaj Smoliniec (project owner), 2026-09-21.
 
 - **Nested under the organization.** The organization is authorized first,
   and every query filters by it; there is no lookup by system ID alone.
@@ -62,7 +64,22 @@ TASK-008 (`ai_systems`, its RLS, its audit triggers and
 - **IDs are UUIDs**, as for organizations; README §67's prefixed public IDs
   are optional and would mix two styles.
 - **Lists are capped at 200**, ordered by name. No pagination until an
-  organization has that many systems.
+  organization has that many systems; a cut-short list says `truncated: true`.
+
+## Amendment: the PR #23 review
+
+- **`truncated`** on the list response (finding 1), so a client can tell
+  200 systems from more.
+- **Names, providers and descriptions are normalized to NFC** in the
+  schemas (finding 2), and organization names too, in
+  `features/organizations/organization.ts` (out of contract, recorded
+  here). A database CHECK (`is nfc normalized`) follows with the next
+  migration that touches these tables, so direct Data API writes are
+  covered too. Decided by Mikołaj Smoliniec (project owner), 2026-09-21.
+- **Public IDs:** plain UUIDs stay. The widget will not expose
+  `ai_systems.id` at all; it gets its own rotatable, revocable public key
+  when that phase is designed (reviewer's recommendation, recorded for the
+  widget phase).
 
 ## Invariants
 

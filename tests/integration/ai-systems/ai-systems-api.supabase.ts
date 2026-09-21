@@ -230,6 +230,11 @@ describe("a member's round trip", () => {
       return aiSystems.map(({ id }) => id);
     }
 
+    const whole = (await (await list("?status=all")).json()) as {
+      truncated: boolean;
+    };
+    expect(whole.truncated).toBe(false);
+
     const byDefault = await idsFor("");
     const archived = await idsFor("?status=archived");
     const all = await idsFor("?status=all");
@@ -282,6 +287,19 @@ describe("names", () => {
     expect(reuse.status).toBe(201);
     const unarchive = await patch(first.aiSystem.id, { status: "active" });
     expect(unarchive.status).toBe(409);
+  });
+
+  it("two spellings of one accented name are one name: 409 (PR #23 review)", async () => {
+    actAs(member, memberClient);
+    const suffix = randomUUID().slice(0, 8);
+    const composed = `Caf${String.fromCodePoint(0xe9)} ${suffix}`;
+    const decomposed = `Cafe${String.fromCodePoint(0x301)} ${suffix}`;
+
+    const first = await create({ name: composed, systemType: "chatbot" });
+    const second = await create({ name: decomposed, systemType: "chatbot" });
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(409);
   });
 
   it("concurrent creations of one name: one 201, the rest 409, never a 500", async () => {

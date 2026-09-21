@@ -28,8 +28,17 @@ import {
  * same transaction as each change, so nothing here records them.
  */
 
-/** Past this, a list is cut short. No organization is near it yet. */
+/**
+ * Past this, a list is cut short, and says so: `truncated` is true (PR #23
+ * review, finding 1). No organization is near it yet; paging comes when one
+ * is.
+ */
 export const AI_SYSTEM_LIST_LIMIT = 200;
+
+export type AiSystemList = Readonly<{
+  aiSystems: SerializedAiSystem[];
+  truncated: boolean;
+}>;
 
 type Created = { status: "ok"; aiSystem: SerializedAiSystem };
 /** Another active system in this organization has the name. */
@@ -57,7 +66,7 @@ type DatabaseError = { code?: string } | null;
 export async function listAiSystems(
   access: OrganizationAccess,
   filter: AiSystemListFilter,
-): Promise<SerializedAiSystem[]> {
+): Promise<AiSystemList> {
   assertAccessAllows(access, "organization.read");
   const { supabase } = await createResolvingSessionClient();
   let query = supabase
@@ -67,14 +76,18 @@ export async function listAiSystems(
   if (filter !== "all") {
     query = query.eq("status", filter);
   }
+  // One more than the limit, to know whether there were more.
   const { data, error } = await query
     .order("name")
     .order("id")
-    .limit(AI_SYSTEM_LIST_LIMIT);
+    .limit(AI_SYSTEM_LIST_LIMIT + 1);
   if (error) {
     throw new AiSystemQueryError(error.code, { cause: error });
   }
-  return data.map(serializeAiSystem);
+  return {
+    aiSystems: data.slice(0, AI_SYSTEM_LIST_LIMIT).map(serializeAiSystem),
+    truncated: data.length > AI_SYSTEM_LIST_LIMIT,
+  };
 }
 
 export async function readAiSystem(
@@ -163,9 +176,12 @@ function toColumns(change: UpdateAiSystemInput): Record<string, unknown> {
 
 /**
  * The refusals a valid request can meet: a name another active system has
- * (`23505`, on create, rename or un-archive), and a role lowered or removed
- * between the check and the write (`42501` from RLS). Anything else is a
- * fault, not the caller's.
+ * (`23505`, on create, rename or un-archive), and, on create only, a role
+ * lowered or removed between the check and the insert (`42501` from RLS).
+ * On an update the same race raises nothing: RLS hides the row, so the
+ * caller gets `not_found` (404) rather than 403. It is refused either way
+ * and leaks nothing (PR #23 review, finding 3). Anything else is a fault,
+ * not the caller's.
  */
 function refusal(error: NonNullable<DatabaseError>): NameTaken {
   if (error.code === "23505") {

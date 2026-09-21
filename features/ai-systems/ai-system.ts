@@ -20,11 +20,18 @@ export const SYSTEM_TYPES = [
 
 export const SYSTEM_STATUSES = ["active", "archived"] as const;
 
-/** One line of text other people will read: trimmed, no hidden characters. */
+/**
+ * One line of text other people will read: trimmed, in Unicode's composed
+ * form (NFC), no hidden characters. NFC first, so "Café" typed as `e` plus a
+ * combining accent is stored as the same four characters as the precomposed
+ * one, and the two cannot pass as different names (PR #23 review, finding 2).
+ * The length is counted after normalizing, as the table counts it.
+ */
 function singleLine(max: number) {
   return z
     .string()
     .trim()
+    .normalize("NFC")
     .min(1)
     .max(max)
     .refine(
@@ -41,6 +48,7 @@ function singleLine(max: number) {
 const description = z
   .string()
   .trim()
+  .normalize("NFC")
   .min(1)
   .max(2000)
   .refine((value) => !hasControlCharacter(value, { allowLineBreaks: true }));
