@@ -5,7 +5,8 @@ import { z } from "zod";
 
 import { AuthorizationError, MembershipLookupError } from "@/lib/auth/errors";
 import {
-  ORGANIZATION_PERMISSIONS,
+  assertOrganizationRole,
+  minimumRoleFor,
   ORGANIZATION_ROLES,
   roleSatisfies,
   type OrganizationPermission,
@@ -56,6 +57,9 @@ export async function requireOrganizationRole({
   organizationId: string;
   minimumRole: OrganizationRole;
 }): Promise<OrganizationAccess> {
+  // Before anything else: a caller's bug must never cost a query or be
+  // decided by one.
+  assertOrganizationRole(minimumRole);
   const { userId } = await requireSession();
   const parsedOrganizationId = idSchema.safeParse(organizationId);
   if (!parsedOrganizationId.success) {
@@ -79,8 +83,12 @@ export async function requireOrganizationRole({
   return Object.freeze({ ...access, role });
 }
 
-/** `requireOrganizationRole` at the minimum role the permission table sets. */
-export function requireOrganizationPermission({
+/**
+ * `requireOrganizationRole` at the minimum role the permission table sets.
+ * Async so that an unknown permission, like every other failure, arrives as
+ * a rejection rather than a synchronous throw.
+ */
+export async function requireOrganizationPermission({
   organizationId,
   permission,
 }: {
@@ -89,7 +97,7 @@ export function requireOrganizationPermission({
 }): Promise<OrganizationAccess> {
   return requireOrganizationRole({
     organizationId,
-    minimumRole: ORGANIZATION_PERMISSIONS[permission],
+    minimumRole: minimumRoleFor(permission),
   });
 }
 
@@ -111,6 +119,9 @@ export async function requireMemberManagement({
   /** The role the change gives the target, if it gives one. */
   assignsRole?: OrganizationRole;
 }): Promise<MemberManagementAccess> {
+  if (assignsRole !== undefined) {
+    assertOrganizationRole(assignsRole);
+  }
   const actor = await requireOrganizationPermission({
     organizationId,
     permission: "members.manage",
@@ -132,7 +143,7 @@ export async function requireMemberManagement({
   }
   const isOwner = roleSatisfies(
     actor.role,
-    ORGANIZATION_PERMISSIONS["ownership.transfer"],
+    minimumRoleFor("ownership.transfer"),
   );
   if (targetRole === "owner" && !isOwner) {
     deny("target_is_owner", actor);

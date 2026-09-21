@@ -93,7 +93,10 @@ import {
 } from "@/lib/auth/errors";
 import {
   ORGANIZATION_PERMISSIONS,
+  UnknownPermissionError,
+  UnknownRoleError,
   type OrganizationPermission,
+  type OrganizationRole,
 } from "@/lib/auth/organization-roles";
 import {
   requireMemberManagement,
@@ -656,3 +659,71 @@ describe.each(["billing.manage", "ownership.transfer"] as const)(
     );
   },
 );
+
+/**
+ * A misspelt role or permission used to admit every member, viewers included
+ * (review of PR #19). A cast, a route table typed `Record<string, string>` or
+ * a configuration value can carry one past the types; the helpers must refuse
+ * it before asking the database anything.
+ */
+describe("unknown role and permission names are refused, not granted", () => {
+  it.each(["Owner", "superadmin", "constructor", ""])(
+    "requireOrganizationRole refuses a viewer asking at the unknown minimum role %j",
+    async (name) => {
+      const userId = randomUUID();
+      const organizationId = randomUUID();
+      setSession(userId);
+      addMembership(organizationId, userId, "viewer");
+
+      const error = await captureRejection(
+        requireOrganizationRole({
+          organizationId,
+          minimumRole: name as OrganizationRole,
+        }),
+      );
+
+      expect(error).toBeInstanceOf(UnknownRoleError);
+      expect(recordedQueries).toHaveLength(0);
+    },
+  );
+
+  it.each(["billing:manage", "constructor", "toString", "__proto__"])(
+    "requireOrganizationPermission refuses a viewer asking for the unknown permission %j",
+    async (name) => {
+      const userId = randomUUID();
+      const organizationId = randomUUID();
+      setSession(userId);
+      addMembership(organizationId, userId, "viewer");
+
+      const error = await captureRejection(
+        requireOrganizationPermission({
+          organizationId,
+          permission: name as OrganizationPermission,
+        }),
+      );
+
+      expect(error).toBeInstanceOf(UnknownPermissionError);
+      expect(recordedQueries).toHaveLength(0);
+    },
+  );
+
+  it('requireMemberManagement refuses an admin assigning the unknown role "Owner"', async () => {
+    const adminId = randomUUID();
+    const targetId = randomUUID();
+    const organizationId = randomUUID();
+    setSession(adminId);
+    addMembership(organizationId, adminId, "admin");
+    addMembership(organizationId, targetId, "member");
+
+    const error = await captureRejection(
+      requireMemberManagement({
+        organizationId,
+        targetUserId: targetId,
+        assignsRole: "Owner" as OrganizationRole,
+      }),
+    );
+
+    expect(error).toBeInstanceOf(UnknownRoleError);
+    expect(recordedQueries).toHaveLength(0);
+  });
+});

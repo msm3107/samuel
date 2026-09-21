@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assertOrganizationRole,
+  minimumRoleFor,
   ORGANIZATION_PERMISSIONS,
   ORGANIZATION_ROLES,
   roleSatisfies,
+  UnknownPermissionError,
+  UnknownRoleError,
   type OrganizationPermission,
   type OrganizationRole,
 } from "@/lib/auth/organization-roles";
@@ -61,6 +65,8 @@ describe("ORGANIZATION_PERMISSIONS", () => {
       "deployments.manage": "member",
       "disclosures.manage": "member",
       "reports.generate": "member",
+      "organization.update": "admin",
+      "members.read": "admin",
       "members.manage": "admin",
       "billing.manage": "owner",
       "ownership.transfer": "owner",
@@ -91,6 +97,8 @@ const EXPECTED_PERMISSIONS_BY_ROLE: Record<
     "deployments.manage",
     "disclosures.manage",
     "reports.generate",
+    "organization.update",
+    "members.read",
     "members.manage",
   ],
   owner: [
@@ -99,6 +107,8 @@ const EXPECTED_PERMISSIONS_BY_ROLE: Record<
     "deployments.manage",
     "disclosures.manage",
     "reports.generate",
+    "organization.update",
+    "members.read",
     "members.manage",
     "billing.manage",
     "ownership.transfer",
@@ -140,6 +150,72 @@ describe("permissions held by each role", () => {
       (
         Object.keys(ORGANIZATION_PERMISSIONS) as OrganizationPermission[]
       ).sort(),
+    );
+  });
+});
+
+/**
+ * A name outside the hierarchy used to rank at -1, below every real role, so
+ * a misspelt minimum admitted everyone (review of PR #19). Types stop these;
+ * a cast or a configuration value does not, hence the casts here.
+ */
+describe("names that are not roles or permissions", () => {
+  const unknownRoles = ["Owner", "superadmin", "", "constructor", "__proto__"];
+
+  it.each(unknownRoles)(
+    "roleSatisfies throws for the unknown minimum role %j",
+    (name) => {
+      expect(() => roleSatisfies("viewer", name as OrganizationRole)).toThrow(
+        UnknownRoleError,
+      );
+      expect(() => roleSatisfies("owner", name as OrganizationRole)).toThrow(
+        UnknownRoleError,
+      );
+    },
+  );
+
+  it.each(unknownRoles)(
+    "roleSatisfies throws for the unknown held role %j",
+    (name) => {
+      expect(() => roleSatisfies(name as OrganizationRole, "viewer")).toThrow(
+        UnknownRoleError,
+      );
+    },
+  );
+
+  it.each([undefined, null, 3, {}])(
+    "assertOrganizationRole throws for the non-string %j",
+    (value) => {
+      expect(() => assertOrganizationRole(value)).toThrow(UnknownRoleError);
+    },
+  );
+
+  it.each([
+    "billing:manage",
+    "Billing.manage",
+    "constructor",
+    "toString",
+    "__proto__",
+    "hasOwnProperty",
+  ])("minimumRoleFor throws for the unknown permission %j", (name) => {
+    expect(() => minimumRoleFor(name as OrganizationPermission)).toThrow(
+      UnknownPermissionError,
+    );
+  });
+
+  it("minimumRoleFor returns the table's role for every real permission", () => {
+    for (const [permission, role] of Object.entries(ORGANIZATION_PERMISSIONS)) {
+      expect(minimumRoleFor(permission as OrganizationPermission)).toBe(role);
+    }
+  });
+
+  it("does not echo the unknown name in the error message", () => {
+    expect(() =>
+      minimumRoleFor("billing:manage" as OrganizationPermission),
+    ).toThrow(
+      expect.objectContaining({
+        message: expect.not.stringContaining("billing"),
+      }),
     );
   });
 });
