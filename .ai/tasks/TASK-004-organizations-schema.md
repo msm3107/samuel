@@ -19,6 +19,16 @@ TASK-001.
 - supabase/seed.sql
 - tests/integration/database/**
 - tests/security/tenant-isolation/**
+- vitest.supabase.config.ts — amended, see below
+
+## Amendment: the real-database test runner
+
+The two test folders above are matched only by `vitest.config.ts`, which runs
+without a database, so their suites could not prove anything about RLS. Adding
+both folders to `vitest.supabase.config.ts` (files named `*.supabase.ts`) runs
+them in CI's existing real-Supabase job. Approved by Mikołaj Smoliniec
+(project owner), 2026-09-21, over moving the tests to `tests/supabase/` or
+writing them in pgTAP.
 
 ## Forbidden files
 
