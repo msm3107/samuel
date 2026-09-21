@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -15,23 +15,46 @@ import {
 /**
  * Unit coverage for `toAuditEventRow` (TASK-006): no database, pure
  * validation. The event-type list is written out literally three times on
- * purpose — here, in `AUDIT_EVENTS`, and in the migration's CHECK constraint
+ * purpose — here, in `AUDIT_EVENTS`, and in the migrations' CHECK constraint
  * — and this file asserts all three agree, so a type added in one place and
  * forgotten in another fails loudly instead of drifting quietly.
  */
 
 const REPOSITORY_ROOT = join(__dirname, "..", "..", "..");
-const MIGRATION_PATH = join(
-  REPOSITORY_ROOT,
-  "supabase",
-  "migrations",
-  "20260921140000_audit_events.sql",
-);
+const MIGRATIONS_DIRECTORY = join(REPOSITORY_ROOT, "supabase", "migrations");
 
-// The ten types the migration's `audit_events_event_type_check` constraint
+/**
+ * The list inside the most recent definition of `constraintName`, across
+ * every migration in the order they apply: a later migration that redefines
+ * the constraint is the one the database ends up with.
+ */
+function latestCheckList(constraintName: string, column: string): string[] {
+  const pattern = new RegExp(
+    `${constraintName} check \\(\\s*${column} in \\(([\\s\\S]*?)\\)\\s*\\)`,
+    "g",
+  );
+  const lists = readdirSync(MIGRATIONS_DIRECTORY)
+    .filter((file) => file.endsWith(".sql"))
+    .sort()
+    .flatMap((file) => [
+      ...readFileSync(join(MIGRATIONS_DIRECTORY, file), "utf8").matchAll(
+        pattern,
+      ),
+    ])
+    .map((match) => match[1] ?? "");
+  expect(lists.length).toBeGreaterThan(0);
+
+  return (lists.at(-1) ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => entry.replace(/^'|'$/g, ""));
+}
+
+// The types the migrations' `audit_events_event_type_check` constraint
 // allows, written literally (README §6 lists eight of these as examples;
-// member.added and member.removed complete the set actually used by
-// membership management).
+// member.added and member.removed complete the set used by membership
+// management, and the ai_system changes are audited by trigger, TASK-008).
 const EVENT_TYPES = [
   "organization.created",
   "member.added",
@@ -39,6 +62,9 @@ const EVENT_TYPES = [
   "member.role_changed",
   "member.removed",
   "ai_system.created",
+  "ai_system.updated",
+  "ai_system.archived",
+  "ai_system.unarchived",
   "deployment.created",
   "disclosure.published",
   "report.generated",
@@ -52,6 +78,9 @@ const ENTITY_TYPE_BY_EVENT: Record<(typeof EVENT_TYPES)[number], string> = {
   "member.role_changed": "membership",
   "member.removed": "membership",
   "ai_system.created": "ai_system",
+  "ai_system.updated": "ai_system",
+  "ai_system.archived": "ai_system",
+  "ai_system.unarchived": "ai_system",
   "deployment.created": "deployment",
   "disclosure.published": "disclosure",
   "report.generated": "report",
@@ -65,6 +94,8 @@ function validMetadata(
   switch (type) {
     case "organization.created":
     case "ai_system.created":
+    case "ai_system.archived":
+    case "ai_system.unarchived":
     case "deployment.created":
     case "disclosure.published":
     case "report.generated":
@@ -74,6 +105,8 @@ function validMetadata(
       return { role: "member" };
     case "member.role_changed":
       return { fromRole: "member", toRole: "admin" };
+    case "ai_system.updated":
+      return { fields: ["name", "provider"] };
     case "member.removed":
       return { role: "member", how: "left" };
     case "billing.plan_changed":
@@ -97,39 +130,25 @@ function validEvent(type: (typeof EVENT_TYPES)[number]): AuditEvent {
 }
 
 describe("AUDIT_EVENTS and the migration's CHECK constraint stay in step", () => {
-  it("AUDIT_EVENTS has exactly the ten literal event types", () => {
+  it("AUDIT_EVENTS has exactly the literal event types", () => {
     expect(Object.keys(AUDIT_EVENTS).sort()).toEqual([...EVENT_TYPES].sort());
   });
 
-  it("the migration's event_type CHECK constraint lists exactly the same types", () => {
-    const sql = readFileSync(MIGRATION_PATH, "utf8");
-    const match = sql.match(
-      /audit_events_event_type_check check \(\s*event_type in \(([\s\S]*?)\)\s*\)/,
+  it("the migrations' latest event_type CHECK constraint lists exactly the same types", () => {
+    const listed = latestCheckList(
+      "audit_events_event_type_check",
+      "event_type",
     );
-    expect(match).not.toBeNull();
-
-    const listed = (match?.[1] ?? "")
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0)
-      .map((entry) => entry.replace(/^'|'$/g, ""));
 
     expect(listed.sort()).toEqual([...EVENT_TYPES].sort());
     expect(listed.sort()).toEqual(Object.keys(AUDIT_EVENTS).sort());
   });
 
-  it("the migration's entity_type CHECK constraint lists exactly the entity types AUDIT_EVENTS uses", () => {
-    const sql = readFileSync(MIGRATION_PATH, "utf8");
-    const match = sql.match(
-      /audit_events_entity_type_check check \(\s*entity_type in \(([\s\S]*?)\)\s*\)/,
+  it("the migrations' latest entity_type CHECK constraint lists exactly the entity types AUDIT_EVENTS uses", () => {
+    const listed = latestCheckList(
+      "audit_events_entity_type_check",
+      "entity_type",
     );
-    expect(match).not.toBeNull();
-
-    const listed = (match?.[1] ?? "")
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0)
-      .map((entry) => entry.replace(/^'|'$/g, ""));
     const used = new Set(
       Object.values(AUDIT_EVENTS).map(({ entityType }) => entityType),
     );
@@ -313,5 +332,26 @@ describe("toAuditEventRow: the returned row", () => {
     expect(() => {
       (row as { event_type: string }).event_type = "member.added";
     }).toThrow();
+  });
+});
+
+describe("ai_system.updated metadata", () => {
+  it.each([
+    ["no fields", { fields: [] }],
+    ["a repeated field", { fields: ["name", "name"] }],
+    ["an unknown field", { fields: ["status"] }],
+    ["a value instead of a name", { fields: ["Support Bot"] }],
+    [
+      "the changed values themselves",
+      { fields: ["name"], name: "Support Bot" },
+    ],
+  ])("refuses %s", (_label, metadata) => {
+    expect(() =>
+      toAuditEventRow(baseIds(), {
+        type: "ai_system.updated",
+        entityId: randomUUID(),
+        metadata,
+      } as unknown as AuditEvent),
+    ).toThrow(ZodError);
   });
 });

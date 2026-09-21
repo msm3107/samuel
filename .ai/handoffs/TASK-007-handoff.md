@@ -236,7 +236,8 @@ See the PR. Each gate was run with the owner's untracked
   4): right-to-left overrides, zero-width spaces and similar. Such a name
   could display as something else in invitation emails and reports. Not
   fixed here and not accepted: refuse `\p{Cf}` except the zero-width joiner,
-  in Zod and in the function, before invitations ship.
+  in Zod and in the function, before invitations ship. Closed in TASK-008
+  (PR #22), by the owner's decision on that review.
 - **Slugs can't be changed** after creation, and some carry a random tail.
 - **The per-request client is still created twice** (session, then query).
   This is the same TASK-005b note. Accepted by Mikołaj Smoliniec (project
