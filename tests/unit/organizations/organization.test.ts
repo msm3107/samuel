@@ -133,3 +133,11 @@ describe("reserved slugs stay in step with the application's routes", () => {
     expect(reserved).toContain("org");
   });
 });
+
+describe("organization names are stored in Unicode's composed form (PR #23 review)", () => {
+  it("a decomposed name becomes the composed one", () => {
+    expect(
+      organizationNameSchema.parse(`Cafe${String.fromCodePoint(0x301)}`),
+    ).toBe(`Caf${String.fromCodePoint(0xe9)}`);
+  });
+});

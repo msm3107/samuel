@@ -8,10 +8,23 @@
  * definitions of "format character".
  */
 
-/** C0 controls and DEL, which Postgres's `[[:cntrl:]]` matches, plus C1. */
-export function hasControlCharacter(value: string): boolean {
+/** Tab, line feed and carriage return: what multi-line text may keep. */
+const LINE_BREAKS_AND_TABS: ReadonlySet<number> = new Set([0x09, 0x0a, 0x0d]);
+
+/**
+ * C0 controls and DEL, which Postgres's `[[:cntrl:]]` matches, plus C1.
+ * `allowLineBreaks` keeps tabs, line feeds and carriage returns, for text
+ * that may span lines, such as a description.
+ */
+export function hasControlCharacter(
+  value: string,
+  { allowLineBreaks = false }: { allowLineBreaks?: boolean } = {},
+): boolean {
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
+    if (allowLineBreaks && LINE_BREAKS_AND_TABS.has(code)) {
+      continue;
+    }
     if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) {
       return true;
     }
