@@ -35,6 +35,14 @@ adapter stop applying a removal to `request.cookies` before that verdict.
 A regression test must add a delay between creating the client and resolving,
 and still find the session intact after a 429.
 
+**Keeping the cookie is not enough (found while implementing, 2026-09-19).**
+auth-js also drops the session from its own memory, so the next `getSession()`
+answers "no session" even with the cookie still in the request, and that reads
+as signed out. So: a missing session counts as a verdict only when the request
+arrived without a readable session cookie. When it had one, "no session" is a
+lookup failure — unverifiable — and the caller decides nothing about the
+person's cookies.
+
 ## Owner agent
 
 Backend
@@ -47,6 +55,7 @@ TASK-003g.
 
 - lib/database/session-client.ts, lib/database/proxy-session-client.ts,
   lib/database/session-cookie-options.ts
+- proxy.ts (only to pass "did this request carry a session?" to the resolver)
 - lib/auth/require-session.ts, lib/auth/resolve-session-user.ts,
   lib/auth/sign-in/sign-out.ts
 - tests/unit/database/\*\*, tests/unit/auth/\*\*, tests/security/auth/\*\*,
@@ -54,7 +63,7 @@ TASK-003g.
 
 ## Forbidden files
 
-- proxy.ts (its own handling is already guarded; only the client below changes)
+- supabase/migrations/\*\*, lib/security/\*\*
 
 ## Invariants
 
@@ -66,8 +75,14 @@ TASK-003g.
 - **Chunk clean-up is never held.** A batch that writes a new session and
   removes its stale chunks is applied at once; holding the removals would
   leave stale chunks that corrupt the next read.
+- **A missing session is a verdict only without a cookie.** If the request
+  carried a readable session cookie and the client reports no session, that is
+  a lookup failure, not a signed-out visitor.
 - **Sign-out still signs out,** including when the auth server cannot be
-  reached.
+  reached, when auth-js has no session to remove, and when the proxy has
+  hidden the session from this request: the session cookie and its chunks are
+  expired by name, and the PKCE verifiers of a sign-in in progress are left to
+  auth-js.
 
 ## Acceptance criteria
 
@@ -77,8 +92,10 @@ TASK-003g.
 
 ## Required tests
 
-- security: 429, 408, 409 and 5xx refresh failures in a route handler delete
-  no session cookie; a rejected credential does; sign-out does
+- security: 429, 408 and 409 refresh failures while resolving delete no
+  session cookie; a rejected credential does; a session hidden by the proxy is
+  still signed out; the proxy answers 503 and clears nothing after a delayed
+  background refresh (5xx is left out: auth-js retries it with a long backoff)
 - unit: a batch mixing a new session with chunk removals is applied at once
 - supabase: a real refresh through a route handler keeps working, and chunk
   clean-up still happens

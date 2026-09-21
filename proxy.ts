@@ -132,12 +132,13 @@ async function mayRefreshSession(request: NextRequest): Promise<boolean> {
 
 async function resolveProxySessionState(
   supabase: ReturnType<typeof createProxySessionClient>["supabase"],
+  options: { hadStoredSession: boolean },
 ): Promise<
   | { state: "signed-in" | "signed-out" }
   | { state: "unverifiable"; error: SessionLookupError }
 > {
   try {
-    const resolution = await resolveSessionUser(supabase.auth);
+    const resolution = await resolveSessionUser(supabase.auth, options);
     return {
       state: resolution.status === "authenticated" ? "signed-in" : "signed-out",
     };
@@ -255,7 +256,10 @@ export default async function proxy(request: NextRequest) {
     ? createProxySessionClient(request)
     : { supabase: null, applySessionCookies: () => {} };
   const session = supabase
-    ? await resolveProxySessionState(supabase)
+    ? await resolveProxySessionState(supabase, {
+        hadStoredSession:
+          (await sessionRefreshState(request.cookies)) !== "none",
+      })
     : { state: "unverifiable" as const, error: new SessionLookupError() };
   const isDashboardRequest = isDashboardPath(request.nextUrl.pathname);
 

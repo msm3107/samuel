@@ -186,6 +186,26 @@ describe("sign-in against local Supabase", () => {
     });
   });
 
+  it("refreshes a real session through requireSession and writes the new one (TASK-003i)", async () => {
+    // requireSession now holds removal-only cookie batches until it has a
+    // verdict; a real refresh writes a new session and must never be held.
+    await signInThroughMailbox(freshAddress());
+    const before = readSession(jar);
+    writeSession(jar, {
+      ...before,
+      expires_at: Math.floor(Date.now() / 1000) - 60,
+    });
+
+    await expect(requireSession()).resolves.toEqual({
+      userId: expect.any(String),
+    });
+
+    const after = readSession(jar);
+    expect(after.access_token).not.toBe(before.access_token);
+    expect(after.refresh_token).not.toBe(before.refresh_token);
+    expect(after.expires_at).toBeGreaterThan(Math.floor(Date.now() / 1000));
+  });
+
   it("rejects the old cookies after signing out through the application", async () => {
     // Codex review of PR #6, finding F6: revocation had only been tested by
     // calling GoTrue directly, never through the app's own sign-out.
