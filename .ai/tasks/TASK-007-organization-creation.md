@@ -43,6 +43,17 @@ session refresh would delete the person's session (review finding F2).
   columns (§66).
 - Route order is `authenticate → authorize → validate → execute → serialize`.
 
+## Open questions from the TASK-004 review, for the owner
+
+- **Slugs are unique across every tenant**, including soft-deleted ones. A
+  creation form that says "slug taken" reveals that another organization uses
+  it, the kind of enumeration README §8 forbids. Decide whether slugs are
+  public (they would appear in URLs anyway), or whether creation picks a
+  free slug itself and never reports a collision.
+- **Reserved slugs.** Words that are, or may become, routes (`dashboard`,
+  `api`, `admin`, `sign-in`, `settings`, …) should be refused before the first
+  organization can take one.
+
 ## Acceptance criteria
 
 - A signed-in user can create an organization and is its owner.

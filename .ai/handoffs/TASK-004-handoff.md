@@ -163,12 +163,12 @@ The subagent's tests were tightened in review:
 
 ### Remaining concerns
 
-- The race test detects a missing lock only probabilistically (1 in 3 runs
-  here). A regression could pass one CI run and fail a later one.
-  Deterministic proof would need two held-open transactions, which PostgREST
-  cannot express.
+- The race test detected a missing lock only probabilistically (1 in 3 runs
+  here). TASK-004a repeats it 20 times, which leaves about a 0.03% chance of
+  a regression passing one run. Deterministic proof would need two held-open
+  transactions, which PostgREST cannot express. Accepted by Mikołaj Smoliniec (project owner), 2026-09-21.
 - Deleting a user who is the last owner of a live organization is refused.
-  Phase 13's account deletion must handle this (decision 1).
+  Phase 13's account deletion must handle this (decision 1). Accepted by Mikołaj Smoliniec (project owner), 2026-09-21.
 - TASK-007 needs a `security definer` function, or a deliberate grant, to
   create an organization together with its owner membership. There is
-  intentionally no insert path today.
+  intentionally no insert path today. Accepted by Mikołaj Smoliniec (project owner), 2026-09-21.
