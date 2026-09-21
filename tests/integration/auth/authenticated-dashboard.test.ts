@@ -36,6 +36,18 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
+// The page lists organizations from the database, which the stub auth server
+// does not serve. A fixed list stands in: this file is about the session.
+vi.mock("@/features/organizations/organization-queries", () => ({
+  listOrganizations: async () => [
+    {
+      id: "8d0c7c1e-3f6a-4f3e-9d6b-2f1c5a7e9b10",
+      name: "Stub Organization",
+      slug: "stub-organization",
+    },
+  ],
+}));
+
 import { renderToStaticMarkup } from "react-dom/server";
 
 import DashboardPage from "@/app/(dashboard)/dashboard/page";
@@ -44,6 +56,7 @@ import { requireSession } from "@/lib/auth/require-session";
 import proxy from "@/proxy";
 
 const SIGNED_IN_USERS = [USER_A];
+const NO_SEARCH_PARAMS = { searchParams: Promise.resolve({}) };
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -264,21 +277,22 @@ describe("dashboard layout with an authenticated session", () => {
 });
 
 describe("dashboard page with an authenticated session", () => {
-  it("renders the placeholder dashboard for an authenticated request", async () => {
+  it("renders the dashboard and its organizations for an authenticated request", async () => {
     installStubAuthServer({ mode: "normal", users: SIGNED_IN_USERS });
     requestCookies.store = headersCookieStore([sessionCookie(USER_A)]);
 
-    const html = renderToStaticMarkup(await DashboardPage());
+    const html = renderToStaticMarkup(await DashboardPage(NO_SEARCH_PARAMS));
 
     expect(html).toContain("<h1");
     expect(html).toContain("Dashboard");
+    expect(html).toContain("Stub Organization");
   });
 
   it("renders nothing identifying the signed-in user", async () => {
     installStubAuthServer({ mode: "normal", users: SIGNED_IN_USERS });
     requestCookies.store = headersCookieStore([sessionCookie(USER_A)]);
 
-    const html = renderToStaticMarkup(await DashboardPage());
+    const html = renderToStaticMarkup(await DashboardPage(NO_SEARCH_PARAMS));
 
     expect(html).not.toContain(USER_A.id);
     expect(html).not.toContain("@example.test");
