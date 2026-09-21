@@ -2,15 +2,22 @@
 -- business actions (README §6).
 --
 -- Who can do what:
---   * Nobody updates a row, whatever their role; a trigger refuses it.
---   * Nobody deletes a single row, whatever their role. Rows go only with
---     their organization, when the organization row itself is deleted, which
---     only the service role can do (README §33: organizations are soft
---     deleted; a hard delete is a deliberate retention step).
+--   * Nobody updates a row through the API, the service role included: no
+--     role has the grant, and a trigger refuses it even for the table owner.
+--   * Nobody deletes a single row the same way. Rows go only with their
+--     organization, when the organization row itself is deleted, which only
+--     the service role can do (README §33: organizations are soft deleted; a
+--     hard delete is a deliberate retention step).
 --   * Only the service role inserts. A user inserting through the Data API
 --     could forge history, so `authenticated` has no insert grant; the
 --     application validates each event and writes it server-side.
 --   * Owners and admins read their own organization's events.
+--
+-- This protects history from the application, its users and the service-role
+-- key. It is not tamper-proof against someone with database-owner access,
+-- who can disable the trigger or skip it with
+-- `session_replication_role = replica`. Tamper evidence (hash-chained rows,
+-- or a copy in external storage) is a Phase 12 question.
 
 create table public.audit_events (
   id uuid primary key default gen_random_uuid(),
@@ -40,6 +47,7 @@ create table public.audit_events (
       entity_type in (
         'organization',
         'membership',
+        'invitation',
         'ai_system',
         'deployment',
         'disclosure',
@@ -83,17 +91,23 @@ create trigger audit_events_set_created_at
   before insert on public.audit_events
   for each row execute function private.set_audit_event_created_at();
 
--- Append-only, for every role, the service role and the table owner
--- included. The one delete allowed is the cascade from deleting the
--- organization: that runs inside the foreign key's own trigger, so
--- `pg_trigger_depth()` is above 1 here. A direct delete runs at depth 1.
+-- Append-only, for every role, the table owner included (short of disabling
+-- the trigger). The one delete allowed is the cascade from deleting the
+-- organization. It runs inside the foreign key's own trigger, so
+-- `pg_trigger_depth()` is above 1, and by then the organization row is gone.
+-- Both are required: depth alone would also admit a delete issued by any
+-- other trigger.
 create function private.refuse_audit_event_change()
 returns trigger
 language plpgsql
 set search_path = ''
 as $$
 begin
-  if tg_op = 'DELETE' and pg_trigger_depth() > 1 then
+  if tg_op = 'DELETE'
+    and pg_trigger_depth() > 1
+    and not exists (
+      select 1 from public.organizations where id = old.organization_id
+    ) then
     return old;
   end if;
   raise exception 'audit events are append-only'

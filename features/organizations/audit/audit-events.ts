@@ -27,8 +27,9 @@ export const AUDIT_EVENTS = {
     entityType: "membership",
     metadata: z.strictObject({ role }),
   },
+  // An invitation is not a membership yet, and will have its own table.
   "member.invited": {
-    entityType: "membership",
+    entityType: "invitation",
     metadata: z.strictObject({ role }),
   },
   "member.role_changed": {

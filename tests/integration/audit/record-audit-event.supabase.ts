@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import type { OrganizationAccess } from "@/lib/auth/require-organization-role";
+import { testOrganizationAccess } from "@/tests/support/organization-access";
 
 import { createTenantFixtures } from "@/tests/security/tenant-isolation/support/tenants";
 import { recordAuditEvent } from "@/features/organizations/audit/record-audit-event";
@@ -36,7 +37,7 @@ describe("recordAuditEvent: recorded rows are correct", () => {
   it("records actor, organization, event type, entity type, entity id and metadata correctly", async () => {
     const owner = await fixtures.createUser();
     const org = await fixtures.createOrganization({ ownerId: owner.id });
-    const access: OrganizationAccess = Object.freeze({
+    const access: OrganizationAccess = testOrganizationAccess({
       userId: owner.id,
       organizationId: org.id,
       role: "owner",
@@ -71,7 +72,7 @@ describe("recordAuditEvent: recorded rows are correct", () => {
   it("records organization.created and member.added for a fresh organization", async () => {
     const owner = await fixtures.createUser();
     const org = await fixtures.createOrganization({ ownerId: owner.id });
-    const access: OrganizationAccess = Object.freeze({
+    const access: OrganizationAccess = testOrganizationAccess({
       userId: owner.id,
       organizationId: org.id,
       role: "owner",
@@ -120,7 +121,7 @@ describe("recordAuditEvent: invalid metadata inserts nothing", () => {
   it("returns {recorded: false} and leaves the row count unchanged", async () => {
     const owner = await fixtures.createUser();
     const org = await fixtures.createOrganization({ ownerId: owner.id });
-    const access: OrganizationAccess = Object.freeze({
+    const access: OrganizationAccess = testOrganizationAccess({
       userId: owner.id,
       organizationId: org.id,
       role: "owner",

@@ -47,12 +47,13 @@ const logger = vi.hoisted(() => ({
 vi.mock("@/lib/logging/logger", () => ({ logger }));
 
 import type { OrganizationAccess } from "@/lib/auth/require-organization-role";
+import { testOrganizationAccess } from "@/tests/support/organization-access";
 
 import type { AuditEvent } from "@/features/organizations/audit/audit-events";
 import { recordAuditEvent } from "@/features/organizations/audit/record-audit-event";
 
 function freshAccess(): OrganizationAccess {
-  return Object.freeze({
+  return testOrganizationAccess({
     userId: randomUUID(),
     organizationId: randomUUID(),
     role: "owner",
@@ -88,7 +89,7 @@ describe("recordAuditEvent: success", () => {
       organization_id: access.organizationId,
       actor_user_id: access.userId,
       event_type: "member.invited",
-      entity_type: "membership",
+      entity_type: "invitation",
       entity_id: event.entityId,
       metadata: { role: "member" },
     });
@@ -212,5 +213,20 @@ describe("recordAuditEvent: database failure", () => {
     });
     expect(db.inserted).toHaveLength(0);
     expect(logger.error).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("recordAuditEvent: the actor must come from requireOrganizationRole", () => {
+  it("does not accept a hand-built access object (checked by pnpm typecheck)", () => {
+    const forged = {
+      userId: randomUUID(),
+      organizationId: randomUUID(),
+      role: "owner",
+    } as const;
+
+    // @ts-expect-error OrganizationAccess is branded: only the authorization helpers make one.
+    const access: OrganizationAccess = forged;
+
+    expect(access).toBe(forged);
   });
 });

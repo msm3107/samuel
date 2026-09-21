@@ -7,6 +7,7 @@ vi.mock("server-only", () => ({}));
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { OrganizationAccess } from "@/lib/auth/require-organization-role";
+import { testOrganizationAccess } from "@/tests/support/organization-access";
 
 import {
   anonClient,
@@ -120,7 +121,7 @@ beforeAll(async () => {
   // A second org A event, written through the real recordAuditEvent path
   // (real service-role client, real Zod validation) rather than the raw
   // admin insert above.
-  const access: OrganizationAccess = Object.freeze({
+  const access: OrganizationAccess = testOrganizationAccess({
     userId: ownerA.id,
     organizationId: orgA.id,
     role: "owner",

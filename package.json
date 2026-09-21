@@ -27,6 +27,7 @@
     "test:e2e:ui": "playwright test --ui",
     "supabase:start": "supabase start -x realtime,storage-api,imgproxy,edge-runtime,logflare,vector,studio,postgres-meta,supavisor",
     "supabase:stop": "supabase stop",
+    "test:db": "supabase test db --local",
     "test:supabase": "node scripts/local-env.mjs --exec node node_modules/vitest/vitest.mjs run --config vitest.supabase.config.ts",
     "test:e2e:supabase": "node tests/e2e/auth/support/build-e2e-app.mjs && node scripts/local-env.mjs --exec node node_modules/@playwright/test/cli.js test --config playwright.supabase.config.ts"
   },

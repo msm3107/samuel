@@ -32,15 +32,12 @@ Data API cannot run two inserts in one transaction, so it needs a database
 function. This task may add exactly one migration, holding only that
 function.
 
-Open for this task: whether the function also writes the
-`organization.created` and `member.added` audit rows in the same
-transaction, or whether the route records them afterwards with
-`recordAuditEvent` (TASK-006).
-
-- In the transaction: the rows can't be missed, but an audit failure then
-  fails the creation.
-- Afterwards: follows TASK-006's rule that auditing never fails the action,
-  but a crash between the two steps loses the rows.
+Decided by Mikołaj Smoliniec (project owner), 2026-09-21, on the TASK-006
+review's recommendation: the function writes the `organization.created` and
+`member.added` audit rows in the same transaction. An audit failure inside
+one database function is a real database fault, and the event that
+establishes ownership can never go missing. The route therefore never
+builds an `OrganizationAccess` for a user who is not a member yet.
 
 - Allowed: one new file in `supabase/migrations/`, for the
   create-organization function.

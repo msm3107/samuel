@@ -48,7 +48,7 @@ const EVENT_TYPES = [
 const ENTITY_TYPE_BY_EVENT: Record<(typeof EVENT_TYPES)[number], string> = {
   "organization.created": "organization",
   "member.added": "membership",
-  "member.invited": "membership",
+  "member.invited": "invitation",
   "member.role_changed": "membership",
   "member.removed": "membership",
   "ai_system.created": "ai_system",
@@ -116,6 +116,25 @@ describe("AUDIT_EVENTS and the migration's CHECK constraint stay in step", () =>
 
     expect(listed.sort()).toEqual([...EVENT_TYPES].sort());
     expect(listed.sort()).toEqual(Object.keys(AUDIT_EVENTS).sort());
+  });
+
+  it("the migration's entity_type CHECK constraint lists exactly the entity types AUDIT_EVENTS uses", () => {
+    const sql = readFileSync(MIGRATION_PATH, "utf8");
+    const match = sql.match(
+      /audit_events_entity_type_check check \(\s*entity_type in \(([\s\S]*?)\)\s*\)/,
+    );
+    expect(match).not.toBeNull();
+
+    const listed = (match?.[1] ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .map((entry) => entry.replace(/^'|'$/g, ""));
+    const used = new Set(
+      Object.values(AUDIT_EVENTS).map(({ entityType }) => entityType),
+    );
+
+    expect(listed.sort()).toEqual([...used].sort());
   });
 });
 

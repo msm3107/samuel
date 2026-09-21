@@ -25,16 +25,31 @@ server-side without ever failing the action it describes.
      was authorized for.
    - Rejected: calling `requireSession()` inside the recorder. Outside a
      server render that is a second auth-server round trip on every event.
-   - Downside: code could build an `OrganizationAccess` object by hand. A
-     request cannot.
+   - `OrganizationAccess` is branded (review note 4), so a hand-built
+     object, such as `{ userId: formData.get("userId"), … }`, does not
+     compile. Only `requireOrganizationRole()` makes one. A
+     `@ts-expect-error` test keeps it that way.
+   - Tests build one through `tests/support/organization-access.ts`, the one
+     deliberate cast.
+   - Downside: a cast still gets past it, as with any TypeScript type.
 3. **Append-only for every role.** Four layers:
    - No grant gives anyone update, delete or truncate, the service role
      included.
-   - A trigger refuses update and delete even for the table owner.
+   - A trigger refuses update and delete, even for the table owner, unless
+     they disable it.
    - A statement trigger refuses truncate.
    - The one way rows disappear is deleting their organization (cascade).
-     The trigger tells that case apart by `pg_trigger_depth() > 1`: the
-     cascade runs inside the foreign key's own trigger.
+     The trigger allows a delete only when both hold:
+     `pg_trigger_depth() > 1`, because the cascade runs inside the foreign
+     key's own trigger, and the organization row no longer exists. Depth
+     alone would also admit a delete issued by any other trigger (review
+     note 2).
+   - What this does not protect against: someone with database-owner
+     access, who can disable the trigger or set
+     `session_replication_role = replica` (review note 3). It protects
+     history from the application, its users and the service-role key. It is
+     not tamper-proof. Tamper evidence, such as hash-chained rows or a copy
+     in external storage, is a Phase 12 question.
    - Rejected: `on delete restrict`. Test clean-up and any future retention
      job would then need to delete audit rows one by one, which is exactly
      what should be impossible.
@@ -63,6 +78,9 @@ server-side without ever failing the action it describes.
      can't be used in the same transaction that adds it, and a value can
      never be removed. A CHECK constraint is dropped and re-added in one
      statement pair.
+   - `member.invited` describes an `invitation`, not a membership (review
+     note 6). Invitations will have their own table, and deciding now, while
+     no rows exist, saves a migration.
    - Types added beyond README §6's examples:
      - `member.added`: TASK-007 audits the owner membership.
      - `member.removed`: carries `how: left | removed`, for the leave path.
@@ -100,6 +118,13 @@ server-side without ever failing the action it describes.
   database
 - `tests/integration/audit/record-audit-event.supabase.ts` (new): 3 tests,
   real database
+- `supabase/tests/audit_events_append_only.test.sql` (new): pgTAP, 9 tests
+- `package.json`: the `test:db` script
+- `.github/workflows/e2e.yml`: a pgTAP step in the existing database job,
+  so no new required check
+- `lib/auth/require-organization-role.ts`: `OrganizationAccess` is branded
+- `tests/support/organization-access.ts` (new): the test-only way to make
+  one
 - `vitest.supabase.config.ts`: now `tests/**/*.supabase.ts`. This is an
   amendment in the contract.
 - `.ai/tasks/TASK-006-audit-events.md`: the amendment
@@ -128,11 +153,19 @@ server-side without ever failing the action it describes.
   - granting update and delete to `authenticated` fails 2;
   - disabling the `created_at` trigger fails 1;
   - replacing `strictObject` with `object` fails 82.
-- The append-only trigger is shadowed by the grants for every role a test
-  can use, so it was proven by hand in `psql` as the table owner:
-  - update and delete are refused;
-  - an organization delete cascades;
-  - a supplied `created_at` is overwritten.
+- The grants hide the append-only trigger from every role the Vitest
+  suites can use. So `supabase/tests/audit_events_append_only.test.sql`
+  (pgTAP, run by `pnpm test:db` and in CI's database job) tests it as the
+  table owner (review note 1). It has 9 tests:
+  - update, direct delete and truncate are refused;
+  - a delete from another trigger is refused while the organization exists;
+  - an organization delete cascades to its own rows only;
+  - `created_at` is set by the database.
+- Mutation checks on the pgTAP suite:
+  - allowing a delete on depth alone fails 3 tests;
+  - dropping the triggers fails 5.
+- A type-level mutation check: removing the `OrganizationAccess` brand
+  fails `pnpm typecheck`.
 
 ### Commands run
 
@@ -141,6 +174,12 @@ See the PR. Each gate was run with the owner's untracked
 
 ### Remaining concerns
 
-- The retention policy (README §33) must decide how long audit rows live.
-  Today they live exactly as long as their organization row.
+- **A failed audit write is only logged, so an event can go missing.**
+  Proposed for Phase 12: an alert on `audit_event_not_recorded`, at least for
+  billing and ownership events. Accepted by Mikołaj Smoliniec (project
+  owner), 2026-09-21.
+- **Hard-deleting an organization erases its audit history.** The retention
+  policy (README §33) must decide how long audit rows live. Today they live
+  exactly as long as their organization row. Accepted by Mikołaj Smoliniec
+  (project owner), 2026-09-21.
 - Nothing records events yet. TASK-007 is the first caller.
