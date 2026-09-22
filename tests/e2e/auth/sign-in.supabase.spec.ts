@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 import { waitForMagicLink } from "../../supabase/support/mailpit";
+import { SHARED_SESSION_FILE } from "../support/shared-session";
 
 /**
  * Sign-in in a real browser against the real local Supabase: the screen asks
@@ -63,13 +64,18 @@ test("refuses a link opened in a browser that did not request it", async ({
 });
 
 // Server-side revocation is covered by tests/supabase/auth/sign-in.supabase.ts;
-// this checks the browser side of losing the session.
+// this checks the browser side of losing the session. It starts from the
+// run's shared sign-in rather than a link of its own (TASK-015a): its own
+// context gets a copy, so clearing it leaves the saved session, and every
+// other spec's, as it was.
 test("closes the dashboard once the session cookies are gone", async ({
-  page,
-  context,
+  browser,
 }) => {
-  const address = await requestLink(page);
-  await page.goto(await waitForMagicLink(address));
+  const context = await browser.newContext({
+    storageState: SHARED_SESSION_FILE,
+  });
+  const page = await context.newPage();
+  await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/dashboard$/);
 
   // Drop the session cookies, as signing out does.
@@ -77,6 +83,7 @@ test("closes the dashboard once the session cookies are gone", async ({
   await page.goto("/dashboard");
 
   await expect(page).toHaveURL(/\/sign-in$/);
+  await context.close();
 });
 
 // The dashboard's organization form moved to

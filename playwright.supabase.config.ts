@@ -20,7 +20,23 @@ export default defineConfig({
   // Replaces the base projects: their own testMatch and testIgnore would win
   // over the two lines above, dropping this config's specs and running the
   // stub-only challenge spec instead.
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  //
+  // `session` signs in once and saves the session for the specs that share
+  // it (TASK-015a); it runs first, every run. Only the specs that load it
+  // are signed in: the rest, the sign-in spec's link tests included, start
+  // from an empty browser.
+  projects: [
+    {
+      name: "session",
+      testMatch: "**/*.supabase.setup.ts",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+      dependencies: ["session"],
+    },
+  ],
   // One mailbox, one auth server, and GoTrue's own rate limits: run in turn.
   fullyParallel: false,
   workers: 1,
