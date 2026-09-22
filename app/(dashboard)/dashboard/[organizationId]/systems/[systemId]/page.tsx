@@ -1,20 +1,32 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
 import { AiSystemForm } from "@/components/dashboard/ai-system-form";
 import { AiSystemStatusForm } from "@/components/dashboard/ai-system-status-form";
 import { Breadcrumbs } from "@/components/dashboard/breadcrumbs";
+import { DeploymentForm } from "@/components/dashboard/deployment-form";
+import { Hostname } from "@/components/dashboard/hostname";
+import { TEXT_LINK } from "@/components/ui/styles";
 import {
   formValuesOf,
   SYSTEM_TYPE_LABELS,
 } from "@/features/ai-systems/ai-system-form";
 import { readAiSystem } from "@/features/ai-systems/ai-system-queries";
+import type { SerializedDeployment } from "@/features/deployments/deployment";
+import { DEPLOYMENT_STATUS_LABELS } from "@/features/deployments/deployment-fields";
+import {
+  DEPLOYMENT_LIST_LIMIT,
+  listDeployments,
+} from "@/features/deployments/deployment-queries";
 import { minimumRoleFor, roleSatisfies } from "@/lib/auth/organization-roles";
 
 import {
   organizationAccessOrNotFound,
   organizationOrNotFound,
 } from "../../access";
+import { createDeploymentAction } from "../../deployments/actions";
+import { deploymentPath } from "../../deployments/messages";
 import { setAiSystemStatusAction, updateAiSystemAction } from "../actions";
 import { systemsPath } from "../messages";
 
@@ -25,6 +37,9 @@ const systemIdSchema = z.uuid();
  * restore it here. A system this organization does not have, including
  * another organization's, is not found, and a non-UUID is too, without a
  * query.
+ *
+ * Its deployments are listed here, and registered here (TASK-015; owner,
+ * 2026-09-22): a deployment always belongs to one system.
  */
 export default async function AiSystemPage({
   params,
@@ -40,10 +55,15 @@ export default async function AiSystemPage({
   if (!id.success) {
     notFound();
   }
-  const [organization, aiSystem] = await Promise.all([
-    organizationOrNotFound(access),
-    readAiSystem(access, id.data),
-  ]);
+  // Active and archived deployments separately, so a long list of one
+  // can't push the other out.
+  const [organization, aiSystem, active, archivedDeployments] =
+    await Promise.all([
+      organizationOrNotFound(access),
+      readAiSystem(access, id.data),
+      listDeployments(access, "active", id.data),
+      listDeployments(access, "archived", id.data),
+    ]);
   if (aiSystem === null) {
     notFound();
   }
@@ -52,6 +72,14 @@ export default async function AiSystemPage({
     minimumRoleFor("systems.manage"),
   );
   const archived = aiSystem.status === "archived";
+  const canManageDeployments = roleSatisfies(
+    access.role,
+    minimumRoleFor("deployments.manage"),
+  );
+  const deployments = [
+    ...active.deployments,
+    ...archivedDeployments.deployments,
+  ];
 
   return (
     <main id="main" className="mx-auto max-w-2xl px-6 py-12">
@@ -92,6 +120,53 @@ export default async function AiSystemPage({
           )}
         </dd>
       </dl>
+
+      <section className="mt-12" aria-labelledby="deployments-heading">
+        <h2 id="deployments-heading" className="text-xl font-semibold">
+          Deployments
+        </h2>
+        {archived && active.deployments.length > 0 ? (
+          <p role="note" className="mt-4 text-sm text-slate-700">
+            This system is archived, so its deployments are inactive: the widget
+            and the checks ignore them until the system is restored.
+          </p>
+        ) : null}
+        {deployments.length === 0 ? (
+          <p className="mt-4 text-slate-700">No hostnames registered yet.</p>
+        ) : (
+          <DeploymentTable
+            organizationId={access.organizationId}
+            deployments={deployments}
+            systemArchived={archived}
+          />
+        )}
+        {active.truncated || archivedDeployments.truncated ? (
+          <p role="note" className="mt-4 text-sm text-slate-700">
+            Showing the first {DEPLOYMENT_LIST_LIMIT} active and the first{" "}
+            {DEPLOYMENT_LIST_LIMIT} archived deployments, by hostname.
+          </p>
+        ) : null}
+
+        {canManageDeployments ? (
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold">Register a hostname</h3>
+            {archived ? (
+              // No dead control: the database refuses this anyway.
+              <p className="mt-2 text-sm text-slate-700">
+                This system is archived. Restore it to register hostnames.
+              </p>
+            ) : (
+              <DeploymentForm
+                action={createDeploymentAction.bind(
+                  null,
+                  access.organizationId,
+                  aiSystem.id,
+                )}
+              />
+            )}
+          </div>
+        ) : null}
+      </section>
 
       {canManage ? (
         <>
@@ -139,5 +214,59 @@ export default async function AiSystemPage({
         </>
       ) : null}
     </main>
+  );
+}
+
+/**
+ * The system's deployments, active first, each by hostname (TASK-015). Under
+ * an archived system an active deployment is marked inactive, because the
+ * widget and the checks ignore it (PR #25 review, finding 2).
+ */
+function DeploymentTable({
+  organizationId,
+  deployments,
+  systemArchived,
+}: {
+  organizationId: string;
+  deployments: readonly SerializedDeployment[];
+  systemArchived: boolean;
+}) {
+  return (
+    <table className="mt-4 w-full border-collapse text-left">
+      <caption className="sr-only">Deployments of this system</caption>
+      <thead>
+        <tr className="border-b border-slate-300 text-sm text-slate-700">
+          <th scope="col" className="py-2 pr-4 font-medium">
+            Hostname
+          </th>
+          <th scope="col" className="py-2 font-medium">
+            Status
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {deployments.map((deployment) => (
+          <tr key={deployment.id} className="border-b border-slate-200">
+            <td className="py-3 pr-4 break-all">
+              <Link
+                href={deploymentPath(organizationId, deployment.id)}
+                className={TEXT_LINK}
+              >
+                <Hostname
+                  hostname={deployment.hostname}
+                  unicodeHostname={deployment.unicodeHostname}
+                />
+              </Link>
+            </td>
+            <td className="py-3">
+              {DEPLOYMENT_STATUS_LABELS[deployment.status]}
+              {systemArchived && deployment.status === "active"
+                ? " (inactive)"
+                : null}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
