@@ -8,7 +8,7 @@ import {
   type Page,
 } from "@playwright/test";
 
-import { waitForMagicLink } from "../../supabase/support/mailpit";
+import { sharedSession } from "../support/shared-session";
 
 /**
  * The dashboard in a real browser against the real local Supabase: an
@@ -16,10 +16,10 @@ import { waitForMagicLink } from "../../supabase/support/mailpit";
  * registered, archived and found again by keyboard alone (TASK-010, the
  * plan's exit criterion for Phase 3). Run with `pnpm test:e2e:supabase`.
  *
- * One sign-in serves all three tests. Magic links are limited to five per network
- * every ten minutes (TASK-003c), the suite already asks for three more, and
- * CI retries a failed test, so every sign-in spent here is one less retry. The third test opens a second tab in the same session, so
- * it needs none.
+ * The tests share the run's one sign-in (TASK-015a,
+ * tests/e2e/support/shared-session.ts), so they work inside an organization
+ * of their own and never sign out. The third test opens a second tab in the
+ * same session.
  */
 test.describe.configure({ mode: "serial" });
 
@@ -31,27 +31,21 @@ let systemUrl: string;
 test.beforeAll(async ({ browser }) => {
   // A context, not browser.newPage(), so a test can open a second tab in
   // the same session.
-  context = await browser.newContext();
+  context = await browser.newContext({ storageState: sharedSession() });
   page = await context.newPage();
-  const address = `e2e-${randomUUID()}@example.test`;
-  await page.goto("/sign-in");
-  await page.getByLabel("Email address").fill(address);
-  await page.getByRole("button", { name: "Email me a sign-in link" }).click();
-  await expect(page.getByRole("status")).toContainText("Check your email");
-  await page.goto(await waitForMagicLink(address));
+  await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/dashboard$/);
 });
 
 test.afterAll(async () => {
-  await context.close();
+  // Unset when beforeAll failed, such as on a stale shared session; closing
+  // it then would only add a second, misleading error.
+  await context?.close();
 });
 
-// Moved from sign-in.supabase.spec.ts, to share the sign-in above.
+// The empty dashboard a new user sees is checked by the shared sign-in's
+// setup, before any spec creates an organization.
 test("creates an organization from the dashboard and lists it", async () => {
-  await expect(
-    page.getByText("You are not in any organization yet"),
-  ).toBeVisible();
-
   organizationName = `E2E Org ${randomUUID().slice(0, 8)}`;
   await page.getByLabel("Organization name").fill(`  ${organizationName}  `);
   await page.getByRole("button", { name: "Create" }).click();

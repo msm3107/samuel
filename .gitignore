@@ -16,6 +16,8 @@ dist/
 coverage/
 test-results/
 playwright-report/
+# the browser specs' shared sign-in (TASK-015a)
+tests/e2e/.auth/
 
 # environment — never commit real credentials
 .env
