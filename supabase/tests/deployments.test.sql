@@ -4,7 +4,7 @@
 -- `pnpm test:db`; everything rolls back.
 begin;
 
-select plan(73);
+select plan(74);
 
 insert into public.organizations (id, name, slug)
 values
@@ -476,16 +476,23 @@ select is(
   'the refused delete left the row'
 );
 
--- Deletion of the organization or system cascades ------------------------------------
+-- The AI system cannot be deleted directly, only its organization (TASK-017,
+-- PR #31 review, note 1): deleting it would otherwise cascade through its
+-- deployments in one statement; now only the organization's own delete does.
 
-delete from public.ai_systems where id = '00000000-0000-4000-8000-0000000000a2';
-
+select throws_ok(
+  $$ delete from public.ai_systems where id = '00000000-0000-4000-8000-0000000000a2' $$,
+  '42501', 'AI systems are archived, not deleted',
+  'the table owner cannot delete an AI system while its organization exists'
+);
 select is(
   (select count(*)::int from public.deployments
    where ai_system_id = '00000000-0000-4000-8000-0000000000a2'),
-  0,
-  'a hard-deleted system takes its deployments with it'
+  3,
+  'the refused delete left its deployments in place'
 );
+
+-- Deletion of the organization still cascades ---------------------------------------
 
 delete from public.organizations where id = '00000000-0000-4000-8000-0000000000f1';
 

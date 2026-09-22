@@ -227,4 +227,25 @@ describe("every change is audited, however it was written (PR #22 review)", () =
       .single();
     expect(data?.description).toBeNull();
   });
+
+  it("the service role cannot delete an AI system while its organization exists, and the row stays (TASK-017, PR #31 review, note 1)", async () => {
+    const { data: created } = await create({
+      name: `Undeletable ${randomUUID().slice(0, 8)}`,
+      system_type: "chatbot",
+    });
+    const id = created?.id as string;
+
+    const { error } = await fixtures.admin
+      .from("ai_systems")
+      .delete()
+      .eq("id", id);
+
+    expect(error?.code).toBe("42501");
+    const { data } = await fixtures.admin
+      .from("ai_systems")
+      .select("id")
+      .eq("id", id)
+      .maybeSingle();
+    expect(data?.id).toBe(id);
+  });
 });

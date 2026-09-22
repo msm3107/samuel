@@ -8,7 +8,7 @@
 -- `pnpm test:db`; everything rolls back.
 begin;
 
-select plan(64);
+select plan(65);
 
 insert into public.organizations (id, name, slug)
 values
@@ -412,20 +412,26 @@ select throws_ok(
   'the table cannot be truncated'
 );
 
--- Deleting the AI system cascades ---------------------------------------------------
+-- The AI system cannot be deleted directly, only its organization (TASK-017,
+-- PR #31 review, note 1): deleting it would otherwise cascade through its
+-- disclosure versions in one statement; now only the organization's own
+-- delete does.
 
 create temporary table dc_system_cascade on commit drop as
 select pg_temp.insert_disclosure(
   'Will go with its system.', 'en', '00000000-0000-4000-8000-0000000dc0b4'
 ) as id;
 
-delete from public.ai_systems where id = '00000000-0000-4000-8000-0000000dc0b4';
-
+select throws_ok(
+  $$ delete from public.ai_systems where id = '00000000-0000-4000-8000-0000000dc0b4' $$,
+  '42501', 'AI systems are archived, not deleted',
+  'the table owner cannot delete an AI system while its organization exists'
+);
 select is(
   (select count(*)::int from public.disclosures
    where ai_system_id = '00000000-0000-4000-8000-0000000dc0b4'),
-  0,
-  'a hard-deleted AI system takes its disclosures with it'
+  1,
+  'the refused delete left its disclosures in place'
 );
 
 -- Deleting the organization cascades -------------------------------------------------
