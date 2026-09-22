@@ -54,7 +54,8 @@ function latestCheckList(constraintName: string, column: string): string[] {
 // The types the migrations' `audit_events_event_type_check` constraint
 // allows, written literally (README §6 lists eight of these as examples;
 // member.added and member.removed complete the set used by membership
-// management, and the ai_system changes are audited by trigger, TASK-008).
+// management, and the ai_system and deployment changes are audited by
+// trigger, TASK-008 and TASK-011).
 const EVENT_TYPES = [
   "organization.created",
   "member.added",
@@ -66,6 +67,8 @@ const EVENT_TYPES = [
   "ai_system.archived",
   "ai_system.unarchived",
   "deployment.created",
+  "deployment.archived",
+  "deployment.unarchived",
   "disclosure.published",
   "report.generated",
   "billing.plan_changed",
@@ -82,6 +85,8 @@ const ENTITY_TYPE_BY_EVENT: Record<(typeof EVENT_TYPES)[number], string> = {
   "ai_system.archived": "ai_system",
   "ai_system.unarchived": "ai_system",
   "deployment.created": "deployment",
+  "deployment.archived": "deployment",
+  "deployment.unarchived": "deployment",
   "disclosure.published": "disclosure",
   "report.generated": "report",
   "billing.plan_changed": "organization",
@@ -97,6 +102,8 @@ function validMetadata(
     case "ai_system.archived":
     case "ai_system.unarchived":
     case "deployment.created":
+    case "deployment.archived":
+    case "deployment.unarchived":
     case "disclosure.published":
     case "report.generated":
       return {};
