@@ -59,7 +59,11 @@ export const AUDIT_EVENTS = {
   },
   "ai_system.archived": { entityType: "ai_system", metadata: noMetadata },
   "ai_system.unarchived": { entityType: "ai_system", metadata: noMetadata },
+  // Written by database triggers (TASK-011), with no metadata: the hostname
+  // stays out of the audit log.
   "deployment.created": { entityType: "deployment", metadata: noMetadata },
+  "deployment.archived": { entityType: "deployment", metadata: noMetadata },
+  "deployment.unarchived": { entityType: "deployment", metadata: noMetadata },
   "disclosure.published": { entityType: "disclosure", metadata: noMetadata },
   "report.generated": { entityType: "report", metadata: noMetadata },
   "billing.plan_changed": {
