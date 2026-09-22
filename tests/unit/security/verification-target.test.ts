@@ -45,6 +45,7 @@ describe("normalizeHostname", () => {
     ["a space", "shop example.com"],
     ["a zero-width space", "shop\u200b.example.com"],
     ["a soft hyphen", "sh\u00adop.example.com"],
+    ["a combining grapheme joiner", "sh\u034fop.example.com"],
     ["invalid punycode", "xn--zz.com"],
   ])("refuses %s", (_label, input) => {
     expect(normalizeHostname(input)).toBeNull();
@@ -126,6 +127,14 @@ describe("validateVerificationTarget", () => {
     ["shop.exa\tmple.com", "INVALID_TARGET"],
     ["shop.exa\nmple.com", "INVALID_TARGET"],
     ["shop\u202e.example.com", "INVALID_TARGET"],
+    // Dropped by IDNA without a trace (PR #26 review).
+    ["exa\u034fmple.com", "INVALID_TARGET"],
+    ["exa\ufe0fmple.com", "INVALID_TARGET"],
+    ["exa\u180bmple.com", "INVALID_TARGET"],
+    ["exa\u3164mple.com", "INVALID_TARGET"],
+    ["exa\u115fmple.com", "INVALID_TARGET"],
+    ["exa\ufe00mple.com", "INVALID_TARGET"],
+    ["exa\u{e0100}mple.com", "INVALID_TARGET"],
     [`${"a.".repeat(600)}com`, "INVALID_TARGET"],
   ])("refuses %j with %s", (input, code) => {
     expect(validateVerificationTarget(input)).toEqual({ ok: false, code });
@@ -135,6 +144,7 @@ describe("validateVerificationTarget", () => {
     "localhost",
     "LOCALHOST",
     "localhost.",
+    "localhost.localdomain",
     "app.localhost",
     "printer.local",
     "metadata.google.internal",
@@ -208,6 +218,15 @@ describe("validateVerificationTarget", () => {
         expect(VERIFICATION_TARGET_FAILURES).toContain(result.code);
       }
     }
+  });
+
+  it("still accepts characters IDNA maps rather than drops", () => {
+    // A full-width letter and the ideographic full stop become ASCII: they
+    // are visible, and nothing disappears.
+    expect(validateVerificationTarget("\uff53hop\u3002example.com")).toEqual({
+      ok: true,
+      hostname: "shop.example.com",
+    });
   });
 
   it("stores what normalizeHostname would", () => {

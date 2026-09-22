@@ -67,7 +67,8 @@ Decided by Mikołaj Smoliniec (project owner), 2026-09-22:
   - Downside: other undelegated names (`.intranet`) pass here and fail at
     resolution in Phase 7.
 
-Proposed by the implementer, awaiting the owner:
+Proposed by the implementer; all seven accepted on the PR #26 review.
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-22.
 
 - **Seven deterministic codes**, in README §19's style:
   - the codes are `INVALID_TARGET`, `UNSUPPORTED_SCHEME`,
@@ -98,8 +99,9 @@ Proposed by the implementer, awaiting the owner:
     name.
 - **Invisible characters are refused, not stripped.** The URL parser drops
   zero-width spaces and soft hyphens silently, so `shop\u200b.example.com`
-  would register as a name the person didn't see. Controls, whitespace and
-  Unicode format characters are refused as `INVALID_TARGET`.
+  would register as a name the person didn't see. Controls, whitespace,
+  Unicode format characters, and any character the parser drops (amended on
+  the PR #26 review) are refused as `INVALID_TARGET`.
 - **`normalizeHostname` canonicalizes and nothing more.** It returns the
   storable form of a bare hostname, or null. `validateVerificationTarget`
   adds the safety checks, and its hostname is always
@@ -108,6 +110,22 @@ Proposed by the implementer, awaiting the owner:
   resolved address, so the address rules live in one place from the start.
 - **Server-only**, like the rest of `lib/security`. A form can show its own
   hints; the decision is the server's.
+
+## Amendment: the PR #26 review
+
+Decided by Mikołaj Smoliniec (project owner), 2026-09-22:
+
+- **Every character the URL parser drops is refused** (note 1). IDNA
+  ignores some characters outside the classes the first version checked:
+  U+034F, variation selectors, and Hangul fillers. Each non-ASCII character
+  is now put to the parser itself, and refused if it disappears.
+  Rejected: adding those characters to the pattern, a list that can miss
+  others. Also rejected: narrowing the promise instead.
+- **`localdomain` is reserved** (note 2). Many hosts files map
+  `localhost.localdomain` to 127.0.0.1.
+- **For TASK-013's contract** (note 3): a lookalike name (`аpple.com` with a
+  Cyrillic "а") is stored correctly as `xn--pple-43d.com`. Screens must
+  show the punycode form, or both forms, so it can't pass as `apple.com`.
 
 ## Invariants
 

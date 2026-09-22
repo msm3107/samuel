@@ -54,6 +54,9 @@ const LAST_LABEL_STARTS_WITH_LETTER = /\.[a-z][a-z0-9-]*$/;
  */
 const RESERVED_TOP_LEVEL_NAMES = new Set([
   "localhost",
+  // Not reserved, but many hosts files map `localhost.localdomain` to
+  // 127.0.0.1 (PR #26 review).
+  "localdomain",
   "local",
   "internal",
   "arpa",
@@ -68,12 +71,7 @@ const RESERVED_TOP_LEVEL_NAMES = new Set([
   "lan",
 ]);
 
-/**
- * Whitespace, controls and invisible format characters. The URL parser
- * would drop some of them silently (`ex\u200bample.com` becomes
- * `example.com`), so a person could register a name other than the one they
- * saw. Refused instead.
- */
+/** Whitespace, controls and invisible format characters. */
 const HIDDEN_CHARACTERS = /[\s\p{Cc}\p{Cf}]/u;
 
 /** A leading `scheme:` that is not `host:port`. */
@@ -189,7 +187,7 @@ export function normalizeHostname(input: string): string | null {
   if (
     input.length === 0 ||
     input.length > MAX_INPUT_LENGTH ||
-    HIDDEN_CHARACTERS.test(input) ||
+    hasHiddenCharacters(input) ||
     /[/?#@:\\[\]%]/.test(input)
   ) {
     return null;
@@ -230,7 +228,7 @@ export function validateVerificationTarget(
   if (
     text.length === 0 ||
     text.length > MAX_INPUT_LENGTH ||
-    HIDDEN_CHARACTERS.test(text)
+    hasHiddenCharacters(text)
   ) {
     return refuse("INVALID_TARGET");
   }
@@ -289,6 +287,29 @@ function addressFailure(address: string): VerificationTargetFailure {
   return isPublicAddress(address)
     ? "IP_ADDRESS_NOT_ALLOWED"
     : "PRIVATE_NETWORK_BLOCKED";
+}
+
+/**
+ * Whether the input holds a character a person can't see, or one the URL
+ * parser would drop without a trace. IDNA ignores some characters outside
+ * the classes above (U+034F, variation selectors, Hangul fillers; PR #26
+ * review), so the parser is asked about each non-ASCII character itself
+ * rather than trusting a list. They are refused, not stripped, so nobody
+ * registers a name other than the one they saw.
+ */
+function hasHiddenCharacters(text: string): boolean {
+  if (HIDDEN_CHARACTERS.test(text)) {
+    return true;
+  }
+  for (const character of text) {
+    if (
+      (character.codePointAt(0) ?? 0) > 0x7f &&
+      parse(`https://a${character}b.com/`)?.hostname === "ab.com"
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function refuse(code: VerificationTargetFailure): VerificationTargetResult {
