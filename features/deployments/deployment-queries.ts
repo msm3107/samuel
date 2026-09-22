@@ -12,6 +12,7 @@ import {
 } from "@/lib/auth/organization-roles";
 import type { OrganizationAccess } from "@/lib/auth/require-organization-role";
 import { createResolvingSessionClient } from "@/lib/database/session-client";
+import { PUBLIC_DEPLOYMENT_ID_PATTERN } from "@/lib/security/public-id";
 
 import {
   DEPLOYMENT_STATUSES,
@@ -71,13 +72,14 @@ export class DeploymentQueryError extends Error {
  * deployment's own system, under the same row-level security.
  */
 const DEPLOYMENT_COLUMNS =
-  "id, ai_system_id, hostname, status, created_at, updated_at, ai_system:ai_systems!deployments_ai_system_fkey(status)";
+  "id, public_id, ai_system_id, hostname, status, created_at, updated_at, ai_system:ai_systems!deployments_ai_system_fkey(status)";
 
 /** Timestamps are kept as the database printed them, as for AI systems. */
 const timestamp = z.iso.datetime({ offset: true });
 
 const deploymentRowSchema = z.object({
   id: z.uuid(),
+  public_id: z.string().regex(PUBLIC_DEPLOYMENT_ID_PATTERN),
   ai_system_id: z.uuid(),
   hostname: z.string(),
   status: z.enum(DEPLOYMENT_STATUSES),
@@ -90,6 +92,7 @@ export function serializeDeployment(row: unknown): SerializedDeployment {
   const parsed = deploymentRowSchema.parse(row);
   return Object.freeze({
     id: parsed.id,
+    publicId: parsed.public_id,
     aiSystemId: parsed.ai_system_id,
     aiSystemStatus: parsed.ai_system.status,
     hostname: parsed.hostname,
@@ -206,16 +209,19 @@ export async function updateDeployment(
   return { status: "ok", deployment: serializeDeployment(data) };
 }
 
-/** The message of TASK-011's trigger, the only one raised as this refusal. */
-const SYSTEM_ARCHIVED_MESSAGE = "a deployment's AI system is archived";
+/**
+ * The hint TASK-011's archived-system trigger carries (TASK-014 migration;
+ * PR #27 review, note 2), so a reworded message can't change the answer.
+ */
+const SYSTEM_ARCHIVED_HINT = "ai_system_archived";
 
 /**
  * The refusals a valid request can meet:
  *
  * - another active deployment of the system at this hostname (`23505`, on
  *   create or restore);
- * - an archived AI system (TASK-011's trigger: `23514` with its own
- *   message, on create or restore). Any other `23514` is the hostname CHECK,
+ * - an archived AI system (TASK-011's trigger: `23514` with its fixed
+ *   hint, on create or restore). Any other `23514` is the hostname CHECK,
  *   which TASK-012's output always passes, so it is a fault;
  * - a role lowered or removed between the check and the insert (`42501`
  *   from RLS). On an update the same race hides the row instead, and the
@@ -223,12 +229,12 @@ const SYSTEM_ARCHIVED_MESSAGE = "a deployment's AI system is archived";
  */
 function refusal(error: {
   code?: string;
-  message?: string;
+  hint?: string | null;
 }): Exists | SystemArchived {
   if (error.code === "23505") {
     return { status: "exists" };
   }
-  if (error.code === "23514" && error.message === SYSTEM_ARCHIVED_MESSAGE) {
+  if (error.code === "23514" && error.hint === SYSTEM_ARCHIVED_HINT) {
     return { status: "ai_system_archived" };
   }
   if (error.code === "42501") {

@@ -125,6 +125,7 @@ describe("HOSTNAME_ERROR_CODES", () => {
 describe("serializeDeployment", () => {
   const ROW = {
     id: DEPLOYMENT_ID,
+    public_id: "dep_abcdefghijklmnopqrstuvwxyz",
     ai_system_id: AI_SYSTEM_ID,
     hostname: "shop.example.com",
     status: "active",
@@ -142,6 +143,7 @@ describe("serializeDeployment", () => {
       }),
     ).toEqual({
       id: DEPLOYMENT_ID,
+      publicId: "dep_abcdefghijklmnopqrstuvwxyz",
       aiSystemId: AI_SYSTEM_ID,
       aiSystemStatus: "active",
       hostname: "shop.example.com",
@@ -182,6 +184,15 @@ describe("serializeDeployment", () => {
   it.each([
     ["a row missing every field", { id: "x" }],
     ["an ai_system_id that is not a uuid", { ...ROW, ai_system_id: "x" }],
+    ["no public_id", { ...ROW, public_id: undefined }],
+    [
+      "a public_id with another prefix",
+      { ...ROW, public_id: "sys_abcdefghijklmnopqrstuvwxyz" },
+    ],
+    [
+      "a public_id with uppercase",
+      { ...ROW, public_id: "dep_ABCDEFGHIJKLMNOPQRSTUVWXYZ" },
+    ],
     ["a status the table doesn't allow", { ...ROW, status: "deleted" }],
     [
       "an ai_system with an unknown status",
