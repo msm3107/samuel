@@ -14,8 +14,14 @@ notice an AI system's widget shows, confined to their organization by RLS.
   turning it off is a new version with `enabled = false`.
 
 There was no TASK-016 contract, so this task adds one. Four decisions are
-the owner's (Mikołaj Smoliniec, 2026-09-22). The implementer proposes nine
-more, awaiting the owner.
+the owner's (Mikołaj Smoliniec, 2026-09-22). The implementer proposed nine
+more, all accepted on the PR #31 review. Accepted by Mikołaj Smoliniec
+(project owner), 2026-09-22.
+
+On the PR #31 review (owner): a message now also refuses the line and
+paragraph separators and any Unicode space at either end (note 2), and
+the archived-system refusal carries the fixed hint `ai_system_archived`
+(note 3). AI systems refuse deletes in TASK-017 (note 1).
 
 ### Decisions
 
@@ -23,26 +29,26 @@ more, awaiting the owner.
 2. **Saving publishes**, with no drafts (owner).
 3. **One current language per AI system** (owner).
 4. **Off is a new version**, `enabled = false` (owner).
-5. **The database numbers the versions** (proposed), under a
+5. **The database numbers the versions** (accepted), under a
    per-system transaction lock, with `unique (ai_system_id, version)` as
    the backstop.
-6. **A message is one line of plain text, 1 to 500 characters** (proposed):
-   no control or format characters (U+200D allowed), trimmed, and
-   NFC-normalized.
-7. **Nothing is published under an archived AI system** (proposed), not
+6. **A message is one line of plain text, 1 to 500 characters** (accepted):
+   no control or format characters (U+200D allowed), no line or paragraph
+   separator, no space of any kind at either end, and NFC-normalized.
+7. **Nothing is published under an archived AI system** (accepted), not
    even a version that turns the notice off.
-8. **No one deletes a version** (proposed), except by deleting its
+8. **No one deletes a version** (accepted), except by deleting its
    organization or AI system; `truncate` is refused too.
-9. **The author and time are the database's** (proposed). A write with no
+9. **The author and time are the database's** (accepted). A write with no
    signed-in user, the service role's included, is refused.
-10. **Each version is audited** as `disclosure.published` (proposed), with
+10. **Each version is audited** as `disclosure.published` (accepted), with
     no metadata.
-11. **`(organization_id, id)` is unique** (proposed), for verification
+11. **`(organization_id, id)` is unique** (accepted), for verification
     checks (Phase 7).
 12. **The language list is mirrored** in `features/disclosures/languages.ts`
-    (proposed), and a unit test keeps it equal to the constraint.
+    (accepted), and a unit test keeps it equal to the constraint.
 13. **A system the caller can't see is refused as if it didn't exist**
-    (proposed), with `23503`, before the version is counted. See Security
+    (accepted), with `23503`, before the version is counted. See Security
     considerations.
 
 ### Files changed
@@ -52,7 +58,7 @@ more, awaiting the owner.
   triggers, grants and policies
 - `features/disclosures/languages.ts` (new): the 24 language codes
 - Tests:
-  - `supabase/tests/disclosures.test.sql` (new): 57 pgTAP tests
+  - `supabase/tests/disclosures.test.sql` (new): 64 pgTAP tests
   - `tests/security/tenant-isolation/disclosures.supabase.ts` (new): 21,
     real database
   - `tests/integration/database/disclosures.supabase.ts` (new): 11, real
@@ -103,7 +109,11 @@ more, awaiting the owner.
     3 runs out of 3;
   - a writer's own `version`, or `created_by`, kept: pgTAP fails (users
     have no grant on either column, so the API can't reach it);
-  - no NFC or format-character check: pgTAP fails.
+  - no NFC or format-character check: pgTAP fails;
+  - the message check without the separators and end spaces (PR #31
+    review): 5 pgTAP tests fail;
+  - the archived refusal without its hint: 1 pgTAP and 1 real-database
+    test fail.
 
 ### Commands run
 
@@ -111,6 +121,14 @@ See the PR. Each gate was run with the owner's untracked
 `CODEX-SECURITY.md` set aside and restored, and its hash verified.
 
 ### Remaining concerns
+
+- **For TASK-017's contract** (PR #31 review):
+  - `23503` and `42501` from a publish both mean "not found";
+  - the archived system is `23514` with hint `ai_system_archived`;
+  - `lib/validation/text.ts` mirrors the message rules, U+2028, U+2029
+    and the end spaces included;
+  - the migration on `ai_systems`: refuse deletes unless the organization
+    is being deleted (note 1), with the owed NFC check.
 
 - **This PR has a migration.** Supabase's "Deploy to production" applies
   it on merge. It only adds a table; no existing table changes.

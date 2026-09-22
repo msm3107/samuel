@@ -200,8 +200,12 @@ describe("the message, language and archived-system rules, as a user sees them",
       enabled: false,
     });
 
+    // The code and the fixed hint are what TASK-017 matches, never the
+    // message text (PR #31 review, note 3).
     expect(on.error?.code).toBe("23514");
+    expect(on.error?.hint).toBe("ai_system_archived");
     expect(off.error?.code).toBe("23514");
+    expect(off.error?.hint).toBe("ai_system_archived");
   });
 });
 

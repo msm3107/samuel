@@ -8,7 +8,7 @@
 -- `pnpm test:db`; everything rolls back.
 begin;
 
-select plan(57);
+select plan(64);
 
 insert into public.organizations (id, name, slug)
 values
@@ -226,6 +226,33 @@ select throws_ok(
   '23514', null, 'a non-NFC-normalized message (e + combining acute) is refused'
 );
 
+-- One line (PR #31 review, note 2): the separators [[:cntrl:]] misses, and
+-- Unicode spaces at either end, which btrim leaves.
+select throws_ok(
+  $$ select pg_temp.insert_disclosure(U&'Line\2028separator.') $$,
+  '23514', null, 'a line separator (U+2028) is refused'
+);
+select throws_ok(
+  $$ select pg_temp.insert_disclosure(U&'Paragraph\2029separator.') $$,
+  '23514', null, 'a paragraph separator (U+2029) is refused'
+);
+select throws_ok(
+  $$ select pg_temp.insert_disclosure(U&'\00A0Leading no-break space.') $$,
+  '23514', null, 'a leading no-break space (U+00A0) is refused'
+);
+select throws_ok(
+  $$ select pg_temp.insert_disclosure(U&'Trailing ideographic space.\3000') $$,
+  '23514', null, 'a trailing ideographic space (U+3000) is refused'
+);
+select throws_ok(
+  $$ select pg_temp.insert_disclosure(U&'Trailing thin space.\2009') $$,
+  '23514', null, 'a trailing thin space (U+2009) is refused'
+);
+select lives_ok(
+  $$ select pg_temp.insert_disclosure(U&'Inner no-break\00A0space, 10\202F%.') $$,
+  'no-break spaces inside the message are accepted'
+);
+
 -- Languages (owner, 2026-09-22: the 24 official EU languages) --------------------
 
 create function pg_temp.count_accepted_languages()
@@ -435,6 +462,30 @@ select throws_ok(
        '00000000-0000-4000-8000-0000000dc0b6', '00000000-0000-4000-8000-0000000dc0a1', false) $$,
   '23514', 'a disclosure''s AI system is archived',
   'not even a version that turns the notice off'
+);
+
+-- The refusal carries a fixed hint for the application to match (PR #31
+-- review, note 3).
+create function pg_temp.archived_refusal_hint()
+returns text
+language plpgsql
+as $$
+declare
+  v_hint text;
+begin
+  perform pg_temp.insert_disclosure(
+    'Hinted.', 'en',
+    '00000000-0000-4000-8000-0000000dc0b6', '00000000-0000-4000-8000-0000000dc0a1');
+  return null;
+exception when check_violation then
+  get stacked diagnostics v_hint = pg_exception_hint;
+  return v_hint;
+end;
+$$;
+
+select is(
+  pg_temp.archived_refusal_hint(), 'ai_system_archived',
+  'the archived-system refusal carries the fixed hint ai_system_archived'
 );
 
 -- Audit --------------------------------------------------------------------------

@@ -59,7 +59,8 @@ Chosen by Mikołaj Smoliniec (project owner), 2026-09-22:
   history. Rejected: an editable switch on a parent row, whose history
   would live only in the audit log.
 
-Proposed by the implementer, awaiting the owner:
+Proposed by the implementer; all nine accepted on the PR #31 review.
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-22.
 
 1. **The database numbers the versions**: 1 for a system's first, then one
    more than its highest. No writer chooses a number, so none can skip,
@@ -71,7 +72,9 @@ Proposed by the implementer, awaiting the owner:
    - No control characters (line breaks included).
    - No Unicode format characters except U+200D, the pattern already on
      organization and AI system names.
-   - No leading or trailing space, and NFC-normalized.
+   - No line or paragraph separator (U+2028, U+2029), no space of any
+     kind at either end, and NFC-normalized (the separators and Unicode
+     spaces were added on the PR #31 review).
    - A notice is a sentence or two, and the widget shows it as one
      paragraph. Refusing format characters stops a right-to-left override
      from making the notice read as something else. NFC means the text the
@@ -107,6 +110,29 @@ Proposed by the implementer, awaiting the owner:
    No one takes the version lock on a system they can't see. Rejected:
    counting as security definer, which fixes the count but still locks
    and reads before RLS; and documenting the leak.
+
+## Amendment: the PR #31 review
+
+Decided by Mikołaj Smoliniec (project owner), 2026-09-22:
+
+- **One line, fully** (note 2). `[[:cntrl:]]` misses U+2028 and U+2029,
+  which browsers break a line at, and `btrim` removes only ASCII spaces.
+  The message check now refuses both separators, and a Unicode space
+  (category Zs, listed rather than left to the locale's `[[:space:]]`)
+  at either end. Taken before merging, so no later migration has to
+  check rows that already exist.
+- **The archived-system refusal carries the fixed hint
+  `ai_system_archived`** (note 3), as deployments' does since #28, so
+  TASK-017 matches the code and the hint, never the message text.
+- **AI systems will refuse deletes in TASK-017** (note 1), except when
+  their organization is deleted, as #25 did for deployments. Only
+  deleting the whole organization will then erase disclosure history.
+  It rides with the NFC check owed on `ai_systems` since #23. Rejected:
+  in this PR, which would change an existing table here; and leaving
+  deletes allowed.
+- Not changed: a viewer passes the visibility check and briefly takes the
+  numbering lock before RLS refuses them (note 4). They can only delay
+  their own organization's publishes for a moment.
 
 ## Invariants
 

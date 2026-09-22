@@ -18,12 +18,14 @@
 --     Rejected: an editable switch on a parent row, whose history would live
 --     only in the audit log.
 --
--- Proposed by the implementer (TASK-016 contract), awaiting the owner:
+-- Proposed by the implementer (TASK-016 contract); accepted by Mikołaj
+-- Smoliniec (project owner), 2026-09-22, on the PR #31 review:
 --   * The database numbers versions 1, 2, 3… per AI system; no writer
 --     chooses one.
 --   * A message is 1 to 500 characters of plain text on one line: no control
---     characters (line breaks included), no format characters but U+200D,
---     no leading or trailing space, and NFC-normalized.
+--     characters (line breaks included), no line or paragraph separator, no
+--     format characters but U+200D, no space of any kind at either end, and
+--     NFC-normalized (the separators and spaces added on the review).
 --   * Nothing is published under an archived AI system, as for deployments.
 --   * No one deletes a version, except by deleting its organization or AI
 --     system: verification checks (Phase 7) will cite them.
@@ -44,12 +46,20 @@ create table public.disclosures (
   -- Plain text, never rendered as HTML or markdown (PLAN Phase 5). The
   -- format-character pattern is the one on ai_systems' and organizations'
   -- names: Unicode general category Cf, less U+200D, as of Unicode 16.0.
+  -- One line (PR #31 review, note 2): [[:cntrl:]] misses the line and
+  -- paragraph separators, U+2028 and U+2029, which browsers break at, and
+  -- btrim removes only ASCII spaces, so no Unicode space (general category
+  -- Zs, as of Unicode 16.0) may start or end the message either. The
+  -- characters are listed rather than left to [[:space:]], whose meaning
+  -- depends on the database's locale.
   message text not null
     constraint disclosures_message_check check (
       char_length(message) between 1 and 500
       and message = btrim(message)
       and message !~ '[[:cntrl:]]'
       and message !~ '[\u00ad\u0600-\u0605\u061c\u06dd\u070f\u0890-\u0891\u08e2\u180e\u200b-\u200c\u200e-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3\U0001d173-\U0001d17a\U000e0001\U000e0020-\U000e007f]'
+      and message !~ '[\u2028\u2029]'
+      and message !~ '^[\u0020\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]|[\u0020\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]$'
       and message is nfc normalized
     ),
   -- ISO 639-1 codes of the 24 official EU languages (owner, 2026-09-22).
@@ -244,8 +254,11 @@ begin
   for share;
 
   if not found then
+    -- The fixed hint is what the application matches, with the code, never
+    -- the message text (PR #31 review, note 3; as for deployments, #28).
     raise exception 'a disclosure''s AI system is archived'
-      using errcode = '23514', constraint = 'disclosures_ai_system_active';
+      using errcode = '23514', constraint = 'disclosures_ai_system_active',
+        hint = 'ai_system_archived';
   end if;
   return null;
 end;
