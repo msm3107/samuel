@@ -71,7 +71,7 @@ Chosen by Mikołaj Smoliniec (project owner), 2026-09-22:
   back, and both are audited. The text beside the button says what happens
   to the widget.
 
-Proposed by the implementer, awaiting the owner:
+Proposed by the implementer; all twelve accepted on the PR #29 review. Accepted by Mikołaj Smoliniec (project owner), 2026-09-22.
 
 1. **Server actions calling TASK-013's queries**, as TASK-010's forms do,
    not `fetch` to the API. They work without JavaScript, and Next.js
@@ -129,6 +129,21 @@ Proposed by the implementer, awaiting the owner:
 12. **Times are shown in UTC**, in a `<time>` element carrying the exact
     value. The server renders the page and doesn't know the reader's time
     zone; UTC, said as such, is never wrong.
+
+## Amendment: the PR #29 review
+
+Decided by Mikołaj Smoliniec (project owner), 2026-09-22:
+
+- **The register action authorizes before it reads the form** (note 2),
+  as the API routes check permission before reading the body. A refused
+  caller gets `not_permitted` and an empty value, not what they typed.
+  Nothing leaked before, since the hostname check is pure computation with
+  a size cap; this is for consistency. A security test pins it.
+- **Browser tests share one sign-in** (note 1): two runs of this PR failed
+  on the magic-link rate limit. This becomes its own task, TASK-015a,
+  before Phase 5: sign in once and reuse the saved session
+  (Playwright's `storageState`) across the test files. The rate limit
+  itself stays as it is.
 
 ## Invariants
 

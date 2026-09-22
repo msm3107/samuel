@@ -230,7 +230,12 @@ describe("user A's actions and organization B", () => {
       createDeploymentAction(orgB.id, systemB, null, deploymentForm(host)),
     );
 
-    expect(outcome).toMatchObject({ value: { result: "not_permitted" } });
+    // Refused before the form is read (PR #29 review, note 2): nothing
+    // typed comes back.
+    expect(outcome).toEqual({
+      kind: "returned",
+      value: { result: "not_permitted", value: "" },
+    });
     expect(await countWithHostname(systemB, host)).toBe(0);
   });
 

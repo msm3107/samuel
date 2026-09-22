@@ -12,8 +12,9 @@ Deployments are now in the dashboard, which closes Phase 4.
 - Viewers see both screens without any write control.
 
 There was no TASK-015 contract, so this task adds one. Three decisions are
-the owner's (Mikołaj Smoliniec, 2026-09-22); twelve are proposed by the
-implementer and await the owner.
+the owner's (Mikołaj Smoliniec, 2026-09-22). The implementer proposed
+twelve more, all accepted on the PR #29 review. Accepted by Mikołaj
+Smoliniec (project owner), 2026-09-22.
 
 ### Decisions
 
@@ -23,36 +24,41 @@ implementer and await the owner.
 2. **The public ID, not an install snippet** (owner). The widget's script
    doesn't exist until Phase 6, so a snippet now would load nothing.
 3. **Archive and restore are one button each** (owner), as for systems.
-4. **Server actions over TASK-013's queries**, not `fetch` to the API. The
+4. **Server actions over TASK-013's queries** (accepted), not `fetch` to the API. The
    form's parser calls `validateVerificationTarget` as the route does, and
    only its output is stored.
-5. **Nothing bound into an action is trusted**: organization, system,
+5. **Nothing bound into an action is trusted** (accepted): organization, system,
    deployment and status are each checked again, and the screens refreshed
    after a change are those of the system the database returned.
-6. **Refusals on a page are 404**, as in TASK-010.
-7. **A registration opens the new deployment**, where its public ID is.
-8. **One fixed message per refusal**: TASK-012's seven reasons, plus
+6. **Refusals on a page are 404** (accepted), as in TASK-010.
+7. **A registration opens the new deployment** (accepted), where its public ID is.
+8. **One fixed message per refusal** (accepted): TASK-012's seven reasons, plus
    already registered, system archived, system gone and permission lost.
    The typed hostname stays in the input; only a refusal of the hostname
    itself marks the input invalid.
-9. **Both hostname forms, fixed left to right** (PR #27 review, note 1;
-   PR #26 review, note 3): `<bdi dir="ltr">`, never `dir="auto"`, and the
+9. **Both hostname forms, fixed left to right** (accepted; PR #27 review,
+   note 1; PR #26 review, note 3): `<bdi dir="ltr">`, never `dir="auto"`, and the
    ASCII form beside the reading form whenever they differ. The breadcrumb,
    which TASK-010 isolates with `dir="auto"`, uses the ASCII form.
-10. **"Inactive" under an archived AI system** (PR #25 review, finding 2),
-    on both screens.
-11. **Restore explains itself** (PR #28 review, note 1): the text beside
+10. **"Inactive" under an archived AI system** (accepted; PR #25 review,
+    finding 2), on both screens.
+11. **Restore explains itself** (accepted; PR #28 review, note
+    1): the text beside
     Archive and Restore says the same public ID comes back, and that a new
     ID means archiving and registering again, with no check history.
-12. **No dead controls**: under an archived system, the registration form
+12. **No dead controls** (accepted): under an archived system, the registration form
     and Restore are replaced by a sentence saying to restore the system
     first. The status form stays mounted, so an archive that leads there is
     still announced. The actions refuse both anyway.
-13. **All the system's deployments, active first**, from two queries so
+13. **All the system's deployments, active first** (accepted), from two queries so
     neither status pushes the other out, each capped at 200 with a note.
-14. **A separate status form**, not TASK-010's made generic: a server
+14. **A separate status form** (accepted), not TASK-010's made generic: a server
     component can't pass the success test as a function.
-15. **Times in UTC**, said as such, in a `<time>` element.
+15. **Times in UTC** (accepted), said as such, in a `<time>` element.
+
+The register action now authorizes before it reads the form (PR #29
+review, note 2; owner): a refused caller gets `not_permitted` and an empty
+value.
 
 ### Files changed
 
@@ -100,7 +106,9 @@ implementer and await the owner.
   - `dir="auto"` on a hostname: 2 unit tests fail;
   - the ASCII form not shown beside an IDN: 1 integration test fails;
   - a restore reported as an archive: 1 integration test fails;
-  - a bound AI system not checked as a UUID: 1 security test fails.
+  - a bound AI system not checked as a UUID: 1 security test fails;
+  - the form read before the permission check (the order before the PR #29
+    review): 1 security test fails.
 
 ### Commands run
 
@@ -110,6 +118,10 @@ See the PR. Each gate was run with the owner's untracked
 ### Remaining concerns
 
 - **No migration in this PR.**
+- **Browser tests and the sign-in rate limit** (PR #29 review, note 1;
+  owner): two runs failed on the magic-link limit and needed a ten-minute
+  wait. TASK-015a, before Phase 5, shares one saved sign-in across the
+  browser test files; the limit stays as it is.
 - **The registration form sits on the system's page**, below the list. An
   organization-wide list of hostnames is left for the agency work.
 - **The install snippet** belongs to Phase 6, once the widget's address

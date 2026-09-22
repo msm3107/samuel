@@ -49,10 +49,13 @@ export async function createDeploymentAction(
     organizationId,
     "deployments.manage",
   );
-  const form = parseDeploymentForm(formData);
+  // Authorized before the form is read, as the API routes check permission
+  // before reading the body (PR #29 review, note 2). A refused caller gets
+  // nothing back, not even what they typed.
   if (access === null) {
-    return { result: "not_permitted", value: form.value };
+    return { result: "not_permitted", value: "" };
   }
+  const form = parseDeploymentForm(formData);
   const systemId = idSchema.safeParse(aiSystemId);
   if (!systemId.success) {
     return { result: "ai_system_not_found", value: form.value };
