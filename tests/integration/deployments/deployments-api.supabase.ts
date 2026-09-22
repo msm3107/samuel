@@ -50,6 +50,7 @@ import {
 type DeploymentBody = {
   deployment: {
     id: string;
+    publicId: string;
     aiSystemId: string;
     aiSystemStatus: string;
     hostname: string;
@@ -185,10 +186,12 @@ describe("a member's round trip", () => {
       "createdAt",
       "hostname",
       "id",
+      "publicId",
       "status",
       "unicodeHostname",
       "updatedAt",
     ]);
+    expect(deployment.publicId).toMatch(/^dep_[a-z2-7]{26}$/);
     expect(deployment).toMatchObject({
       aiSystemId: systemId,
       aiSystemStatus: "active",

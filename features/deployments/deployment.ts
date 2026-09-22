@@ -71,12 +71,15 @@ export const HOSTNAME_ERROR_CODES = {
  *   the ASCII form beside it whenever the two differ, so a lookalike
  *   (`аpple.com` with a Cyrillic "а") can't pass as another name (PR #26
  *   review, note 3; owner, 2026-09-22).
+ * - `publicId` is what the customer puts in the widget's `data-deployment`
+ *   attribute (TASK-014). Public by design, and never authorization.
  * - `aiSystemStatus` is the system's status, read in the same query. A
  *   deployment of an archived system is never verified, whatever its own
  *   status (PR #25 review, finding 2; owner, 2026-09-22).
  */
 export type SerializedDeployment = Readonly<{
   id: string;
+  publicId: string;
   aiSystemId: string;
   aiSystemStatus: DeploymentStatus;
   hostname: string;

@@ -115,6 +115,13 @@ tasks, with no change to this one's code:
   text, so a reworded message can't turn the 409 into a 500. Not worth a
   migration on its own.
 
+## Amendment: TASK-014
+
+- **Responses gain `publicId`**, the deployment's public identifier.
+- **The archived-system refusal is matched by its fixed hint**,
+  `ai_system_archived`, instead of its message text (PR #27 review, note
+  2).
+
 ## Invariants
 
 - Route order: same-origin check (writes) → authenticate → authorize →

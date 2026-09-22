@@ -362,19 +362,19 @@ select pg_temp.insert_deployment('fixed.example.com');
 select throws_ok(
   $$ update public.deployments set hostname = 'moved.example.com'
      where hostname = 'fixed.example.com' $$,
-  '42501', 'a deployment keeps its id, organization, AI system and hostname',
+  '42501', 'a deployment keeps its id, public ID, organization, AI system and hostname',
   'the hostname cannot be changed, even by the table owner'
 );
 select throws_ok(
   $$ update public.deployments set ai_system_id = '00000000-0000-4000-8000-0000000000a2'
      where hostname = 'fixed.example.com' $$,
-  '42501', 'a deployment keeps its id, organization, AI system and hostname',
+  '42501', 'a deployment keeps its id, public ID, organization, AI system and hostname',
   'the AI system cannot be changed, even by the table owner'
 );
 select throws_ok(
   $$ update public.deployments set id = gen_random_uuid()
      where hostname = 'fixed.example.com' $$,
-  '42501', 'a deployment keeps its id, organization, AI system and hostname',
+  '42501', 'a deployment keeps its id, public ID, organization, AI system and hostname',
   'the id cannot be changed, even by the table owner'
 );
 select throws_ok(
@@ -382,7 +382,7 @@ select throws_ok(
      set organization_id = '00000000-0000-4000-8000-0000000000f2',
          ai_system_id = '00000000-0000-4000-8000-0000000000a3'
      where hostname = 'fixed.example.com' $$,
-  '42501', 'a deployment keeps its id, organization, AI system and hostname',
+  '42501', 'a deployment keeps its id, public ID, organization, AI system and hostname',
   'a deployment cannot move to another organization, even by the table owner'
 );
 

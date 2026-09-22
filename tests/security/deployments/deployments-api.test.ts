@@ -28,7 +28,7 @@ const state = vi.hoisted(() => ({
   }>,
   deploymentsResult: { data: null, error: null } as {
     data: unknown;
-    error: { code: string; message: string } | null;
+    error: { code: string; message: string; hint?: string | null } | null;
   },
   logs: [] as unknown[],
 }));
@@ -116,6 +116,7 @@ import {
 
 const ROW = {
   id: DEPLOYMENT,
+  public_id: "dep_abcdefghijklmnopqrstuvwxyz",
   ai_system_id: SYSTEM,
   hostname: "shop.example.com",
   status: "active",
@@ -456,13 +457,37 @@ describe("what a database refusal becomes", () => {
   it("the archived-AI-system check is 409 ai_system_archived", async () => {
     state.deploymentsResult = {
       data: null,
-      error: { code: "23514", message: "a deployment's AI system is archived" },
+      error: {
+        code: "23514",
+        message: "a deployment's AI system is archived",
+        hint: "ai_system_archived",
+      },
     };
 
     const response = await create();
 
     expect(response.status).toBe(409);
     expect((await readError(response)).code).toBe("ai_system_archived");
+  });
+
+  it("is recognized by its hint, not its message (PR #27 review, note 2)", async () => {
+    state.deploymentsResult = {
+      data: null,
+      error: { code: "23514", message: "reworded", hint: "ai_system_archived" },
+    };
+    const reworded = await create();
+    state.deploymentsResult = {
+      data: null,
+      error: {
+        code: "23514",
+        message: "a deployment's AI system is archived",
+        hint: null,
+      },
+    };
+    const noHint = await create();
+
+    expect(reworded.status).toBe(409);
+    expect(noHint.status).toBe(500);
   });
 
   it("any other check violation is a 500, not mistaken for the archived-system one", async () => {
