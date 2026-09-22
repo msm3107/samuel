@@ -66,7 +66,8 @@ Also decided, on the PR #27 review (note 2): this migration touches
 `deployments`, so the archived-system refusal gains a fixed hint,
 `ai_system_archived`, and the service matches the code plus that hint.
 
-Proposed by the implementer, awaiting the owner:
+Proposed by the implementer; all six accepted on the PR #28 review.
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-22.
 
 - **One generator, `private.generate_public_id(prefix)`**, for every
   prefixed public ID (Phase 9's reports will call it).
@@ -88,6 +89,27 @@ Proposed by the implementer, awaiting the owner:
   table.
 - **The format check is exact**: no trimming or case folding, so each ID
   has one spelling.
+
+## Amendment: the PR #28 review
+
+Decided by Mikołaj Smoliniec (project owner), 2026-09-22; recorded for later
+tasks, with no change to this one's code:
+
+- **Restoring a deployment revives its public ID** (note 1). Archiving
+  revokes an ID only until someone restores the deployment. The way to
+  rotate an ID is to archive and register the hostname again, which starts
+  a new deployment with no verification history.
+  - **TASK-015's contract:** the screen says so beside Archive and Restore.
+  - **TASK-019's contract:** it must not assume a restore issues a new ID.
+    It resolves an ID only while both the deployment and its AI system are
+    active (PR #25 review, finding 2).
+  - Rejected: a new ID on every restore. It would make every customer
+    re-paste the snippet after what looks like an undo.
+- **Migrations land before the code that reads them** (note 3). From now
+  on, a migration that adds a column the application reads either ships in
+  a PR before the code that reads it, or the code tolerates the column's
+  absence. In this PR the window is harmless, since production has no
+  deployments.
 
 ## Invariants
 

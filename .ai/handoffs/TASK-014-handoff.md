@@ -7,16 +7,19 @@ Every deployment now has a public identifier, `public_id`, such as
 `data-deployment` attribute.
 
 - The database issues it, and nobody can choose or change it.
-- Archiving a deployment revokes it; registering the hostname again issues
-  a new one.
+- Archiving a deployment revokes it until someone restores the
+  deployment; registering the hostname again issues a new one.
 - The deployment API returns it as `publicId`.
 - `lib/security/public-id.ts` recognizes the format, for Phase 6's
   endpoint.
 
 There was no TASK-014 contract, so this task adds one. Four decisions are
-the owner's (Mikołaj Smoliniec, 2026-09-22); six more are proposed and
-await the owner. PR #27's note 2 (a fixed hint on the archived-system
-refusal) lands here, because this migration touches `deployments`.
+the owner's (Mikołaj Smoliniec, 2026-09-22). The implementer proposed six
+more, all accepted on the PR #28 review. Accepted by Mikołaj Smoliniec
+(project owner), 2026-09-22.
+
+PR #27's note 2 (a fixed hint on the archived-system refusal) lands here,
+because this migration touches `deployments`.
 
 ### Decisions
 
@@ -30,25 +33,25 @@ refusal) lands here, because this migration touches `deployments`.
    doesn't.
 4. **The lookup is TASK-019's** (owner). It must require both the
    deployment and its AI system to be active.
-5. **One generator, `private.generate_public_id(prefix)`** (proposed).
+5. **One generator, `private.generate_public_id(prefix)`** (accepted).
    - Each character is one random byte masked to 5 bits, unbiased because
      256 is a multiple of 32.
    - Phase 9's report IDs reuse it.
    - Not exposed through the API: `private` isn't an API schema, and no API
      role may execute it.
-6. **A BEFORE INSERT trigger, not a column default** (proposed).
+6. **A BEFORE INSERT trigger, not a column default** (accepted).
    - A default runs with the inserting user's privileges, and users can't
      execute the generator.
    - The trigger is security definer, sets one column, and overwrites any
      value named on insert.
-7. **Existing rows filled by a one-off volatile default** (proposed),
+7. **Existing rows filled by a one-off volatile default** (accepted),
    dropped straight after. On a local database reset to the previous
    migration, two existing deployments got distinct IDs, with no
    `updated_at` change and no new audit event.
-8. **The guard keeps the public ID** (proposed), as it keeps the hostname.
-9. **`publicId` in the API response** (proposed). Only the organization's
+8. **The guard keeps the public ID** (accepted), as it keeps the hostname.
+9. **`publicId` in the API response** (accepted). Only the organization's
    members read it; the anonymous role has no grant on `deployments`.
-10. **An exact format check** (proposed): no trimming or case folding, so
+10. **An exact format check** (accepted): no trimming or case folding, so
     each ID has one spelling.
 
 Also, as decided on the PR #27 review (note 2): the archived-system trigger
@@ -120,6 +123,14 @@ See the PR. Each gate was run with the owner's untracked
   `deployment_exists`, wrongly, and a retry would succeed. Not worth code.
 - **TASK-019 must require both statuses active** when resolving a public ID
   (PR #25, finding 2), and check `isPublicDeploymentId` before any query.
+- **Restoring a deployment revives its old ID** (PR #28 review, note 1;
+  owner's choice to record, not change). Rotating means archiving and
+  registering again, with no verification history carried over.
+  TASK-015's screen says so beside Archive and Restore, and TASK-019 must
+  not assume a restore issues a new ID.
+- **Migrations land before the code that reads them** (PR #28 review, note
+  3; owner). A migration adding a column the application reads ships in a
+  PR before the code that reads it, or the code tolerates its absence.
 - **Owed from earlier tasks, unchanged:** the database NFC check with the
   next migration on `ai_systems` or `organizations`; TASK-015's
   left-to-right, isolated display of `unicodeHostname` (PR #27, note 1).
