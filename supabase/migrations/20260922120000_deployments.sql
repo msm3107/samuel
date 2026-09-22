@@ -13,18 +13,28 @@
 --   * A deployment cannot be created or restored under an archived AI system.
 --     Archiving a system leaves its deployments as they are.
 --
--- Proposed by the implementer, awaiting the owner:
+-- Proposed by the implementer; accepted by Mikołaj Smoliniec (project owner),
+-- 2026-09-22, on the PR #25 review:
 --   * The database checks a hostname's shape, not its safety. Loopback,
 --     private and metadata names are refused by lib/security (TASK-012) and
 --     again when the verifier resolves them (Phase 7). The shape check still
 --     refuses every IP literal and every single-label name, `localhost`
---     included, because it demands a dot and a top-level label with a letter.
---   * Status is `active | archived`, as for AI systems. Users archive; only
---     the service role deletes (README §33: archive a deployment, keep its
---     verification history).
+--     included, because it demands a dot and a top-level label that starts
+--     with a letter.
+--   * Status is `active | archived`, as for AI systems. Users archive
+--     (README §33: archive a deployment, keep its verification history).
 --   * Creation, archive and restore are audited by trigger, as for AI
 --     systems.
 --   * The public deployment identifier is TASK-014's column, not this one.
+--
+-- On the PR #25 review, same date (owner):
+--   * The top-level label must start with a letter. "Contains a letter" let
+--     hexadecimal IP forms through: 127.0.0.0x1 and 169.254.169.0xfe, which
+--     WHATWG URL parsers (fetch's included) read as 127.0.0.1 and the cloud
+--     metadata address. Every real top-level domain starts with a letter.
+--   * No one deletes a deployment, the service role included, except by
+--     deleting its organization or AI system. Verification history will
+--     cascade from deployments (Phase 7); one delete would erase it silently.
 
 create table public.deployments (
   id uuid primary key default gen_random_uuid(),
@@ -33,14 +43,15 @@ create table public.deployments (
   ai_system_id uuid not null,
   -- A normalized hostname: lowercase ASCII, IDN labels already
   -- punycode-encoded, no trailing dot, no port. Labels of 1 to 63 letters,
-  -- digits and inner hyphens; at least two of them; the last with a letter
-  -- (the second pattern), which rules out 127.0.0.1, 0x7f.1 and every other
-  -- IP literal. IPv6 and ports need a colon, which no label allows.
+  -- digits and inner hyphens; at least two of them; the last starting with
+  -- a letter (the second pattern). That rules out every IPv4 form a URL
+  -- parser accepts: 127.0.0.1, 0x7f.1, 127.0.0.0x1, 2130706433. IPv6 and
+  -- ports need a colon, which no label allows.
   hostname text not null
     constraint deployments_hostname_check check (
       char_length(hostname) <= 253
       and hostname ~ '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
-      and hostname ~ '[a-z][a-z0-9-]*$'
+      and hostname ~ '\.[a-z][a-z0-9-]*$'
     ),
   status text not null default 'active'
     constraint deployments_status_check check (status in ('active', 'archived')),
@@ -125,6 +136,57 @@ revoke all on function private.guard_deployment_update()
 create trigger deployments_guard_update
   before update on public.deployments
   for each row execute function private.guard_deployment_update();
+
+-- No deletes (owner, 2026-09-22, PR #25 review). Users have no delete grant;
+-- this stops the service role and the table owner too, short of disabling
+-- the trigger. Deleting the organization or the AI system still takes its
+-- deployments with it: by the time a cascade reaches this row, the parent
+-- that was deleted is gone. Both are checked, because the organization's
+-- delete reaches this table by two foreign keys, in no promised order.
+create function private.refuse_deployment_delete()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if exists (select 1 from public.organizations where id = old.organization_id)
+    and exists (
+      select 1 from public.ai_systems
+      where organization_id = old.organization_id and id = old.ai_system_id
+    )
+  then
+    raise exception 'deployments are archived, not deleted'
+      using errcode = '42501';
+  end if;
+  return old;
+end;
+$$;
+
+revoke all on function private.refuse_deployment_delete()
+  from public, anon, authenticated;
+
+create trigger deployments_refuse_delete
+  before delete on public.deployments
+  for each row execute function private.refuse_deployment_delete();
+
+-- A truncate would skip the row trigger above.
+create function private.refuse_deployment_truncate()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  raise exception 'deployments are archived, not deleted'
+    using errcode = '42501';
+end;
+$$;
+
+revoke all on function private.refuse_deployment_truncate()
+  from public, anon, authenticated;
+
+create trigger deployments_refuse_truncate
+  before truncate on public.deployments
+  for each statement execute function private.refuse_deployment_truncate();
 
 -- No active deployment under an archived AI system (owner, 2026-09-22).
 --
@@ -257,7 +319,7 @@ create trigger deployments_audit_update
 
 -- Grants. Start from nothing. A user names the organization, system and
 -- hostname on insert and changes only the status afterwards. No delete
--- grant: users archive.
+-- grant: users archive, and the trigger above refuses everyone else.
 revoke all on table public.deployments from anon, authenticated;
 
 grant select on table public.deployments to authenticated;

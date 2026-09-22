@@ -54,15 +54,16 @@ Decided by Mikołaj Smoliniec (project owner), 2026-09-22:
   skip them. Rejected: archiving them along with the system, which changes
   rows the person never looked at.
 
-Proposed by the implementer, awaiting the owner:
+Proposed by the implementer; all four accepted on the PR #25 review.
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-22.
 
 - **The database checks a hostname's shape, not its safety.**
   - The shape: lowercase ASCII, IDN labels already punycode, no trailing
     dot, labels of 1 to 63 characters, 253 in all, at least two labels, and
-    a last label with a letter.
+    a last label that starts with a letter (amended on the PR #25 review).
   - That shape alone refuses every IP literal (`127.0.0.1`, `0x7f.1`,
-    `[::1]`), `localhost` and every other single-label name, ports, paths,
-    schemes and credentials.
+    `127.0.0.0x1`, `[::1]`), `localhost` and every other single-label name,
+    ports, paths, schemes and credentials.
   - Names that are well-formed but unsafe (`metadata.google.internal`, a
     name that resolves to a private address) are refused by
     `lib/security/verification-target.ts` (TASK-012) and again when the
@@ -70,9 +71,8 @@ Proposed by the implementer, awaiting the owner:
   - Why not the whole list in SQL: it would be a second SSRF validator,
     which the plan names as the failure mode to avoid, and resolution can't
     happen in a CHECK anyway.
-- **Status is `active | archived`**, as for AI systems. Users archive; only
-  the service role deletes (README §33: archive a deployment, keep its
-  verification history).
+- **Status is `active | archived`**, as for AI systems. Users archive
+  (README §33: archive a deployment, keep its verification history).
 - **Creation, archive and restore are audited by trigger**, as for AI
   systems.
   - The events are `deployment.created`, plus the new `deployment.archived`
@@ -83,6 +83,28 @@ Proposed by the implementer, awaiting the owner:
 - **The public deployment identifier is TASK-014's column.** Its migration
   can add the column with a generated default, which fills the rows that
   already exist.
+
+## Amendment: the PR #25 review
+
+Decided by Mikołaj Smoliniec (project owner), 2026-09-22:
+
+- **The top-level label must start with a letter** (finding 1). The first
+  version only required it to contain one, which let hexadecimal IPv4 forms
+  through: `127.0.0.0x1` and `169.254.169.0xfe`, which URL parsers (fetch's
+  included) read as `127.0.0.1` and the cloud metadata address. Every real
+  top-level domain starts with a letter. Rejected: keeping the rule and
+  saying "most IP addresses", which would leave TASK-012 without its
+  backstop.
+- **No one deletes a deployment** (finding 3), the service role and the
+  table owner included, except by deleting its organization or AI system.
+  A row trigger refuses the delete while both still exist, and a statement
+  trigger refuses `truncate`. Verification history will cascade from
+  deployments (Phase 7), and README §33 says to keep it. Rejected: an
+  audit trigger on delete, which records the loss but doesn't prevent it.
+- Not taken: writing into later contracts that the widget key, verifier and
+  public pages check the AI system's status as well (finding 2), and
+  reading the database container's name from `supabase status` in the
+  race test (finding 4). Both are recorded in the handoff.
 
 ## Invariants
 
@@ -96,7 +118,9 @@ Proposed by the implementer, awaiting the owner:
 - Access resolves through `authz.has_org_role`: viewers read, members and up
   write, and no one reaches a soft-deleted organization's deployments.
 - A user sets `organization_id`, `ai_system_id` and `hostname` on insert, and
-  only `status` afterwards. There is no delete grant.
+  only `status` afterwards. There is no delete grant, and a trigger refuses
+  any other writer's delete unless the organization or AI system is being
+  deleted.
 - `id`, `organization_id`, `ai_system_id` and `hostname` never change, for
   any writer short of the table owner disabling the trigger. `created_at`
   and `updated_at` are the database's.
@@ -109,7 +133,8 @@ Proposed by the implementer, awaiting the owner:
 - `supabase db reset` applies the migration cleanly.
 - Cross-tenant read, write and enumeration fail through RLS, proven against
   the real database.
-- A viewer cannot write; nobody but the service role can delete.
+- A viewer cannot write. No one deletes a deployment except by deleting its
+  organization or AI system (amended on the PR #25 review).
 - A duplicate active system and hostname pair fails with a unique
   violation, deterministically, including under concurrent inserts.
 - Typecheck, lint, format, and tests pass.

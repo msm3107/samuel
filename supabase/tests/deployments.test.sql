@@ -4,7 +4,7 @@
 -- `pnpm test:db`; everything rolls back.
 begin;
 
-select plan(64);
+select plan(73);
 
 insert into public.organizations (id, name, slug)
 values
@@ -116,6 +116,10 @@ select lives_ok(
   'a punycode-encoded IDN label is accepted'
 );
 select lives_ok(
+  $$ select pg_temp.insert_deployment('shop.xn--p1ai') $$,
+  'a punycode-encoded top-level label is accepted'
+);
+select lives_ok(
   $$ select pg_temp.insert_deployment('a1-b2.co') $$,
   'digits and inner hyphens are accepted'
 );
@@ -165,6 +169,29 @@ select throws_ok(
 select throws_ok(
   $$ select pg_temp.insert_deployment('0x7f.1') $$,
   '23514', null, 'a shorthand IPv4 literal is refused'
+);
+
+-- PR #25 review, finding 1: hexadecimal last labels contain a letter, and
+-- URL parsers read these as IPv4 addresses.
+select throws_ok(
+  $$ select pg_temp.insert_deployment('127.0.0.0x1') $$,
+  '23514', null, 'a hexadecimal last label (127.0.0.0x1, read as 127.0.0.1) is refused'
+);
+select throws_ok(
+  $$ select pg_temp.insert_deployment('169.254.169.0xfe') $$,
+  '23514', null, 'a hexadecimal cloud metadata address (169.254.169.0xfe) is refused'
+);
+select throws_ok(
+  $$ select pg_temp.insert_deployment('0x7f.0x1') $$,
+  '23514', null, 'an all-hexadecimal address (0x7f.0x1) is refused'
+);
+select throws_ok(
+  $$ select pg_temp.insert_deployment('10.0.0.0x1') $$,
+  '23514', null, 'a hexadecimal private address (10.0.0.0x1) is refused'
+);
+select throws_ok(
+  $$ select pg_temp.insert_deployment('2130706433') $$,
+  '23514', null, 'a single-number address (2130706433) is refused'
 );
 select throws_ok(
   $$ select pg_temp.insert_deployment('[::1]') $$,
@@ -425,11 +452,31 @@ select pg_temp.sign_in_as('00000000-0000-4000-8000-0000000000e1');
 select ok(
   not has_function_privilege('authenticated', 'private.audit_deployment_change()', 'execute')
     and not has_function_privilege('authenticated', 'private.require_active_ai_system()', 'execute')
-    and not has_function_privilege('authenticated', 'private.guard_deployment_update()', 'execute'),
+    and not has_function_privilege('authenticated', 'private.guard_deployment_update()', 'execute')
+    and not has_function_privilege('authenticated', 'private.refuse_deployment_delete()', 'execute')
+    and not has_function_privilege('authenticated', 'private.refuse_deployment_truncate()', 'execute'),
   'a signed-in user cannot call the trigger functions directly'
 );
 
--- Deletion by the service role cascades --------------------------------------------
+-- No deletes, except with the organization or system (PR #25 review) ---------------
+
+select throws_ok(
+  $$ delete from public.deployments where hostname = 'fixed.example.com' $$,
+  '42501', 'deployments are archived, not deleted',
+  'a deployment cannot be deleted, even by the table owner'
+);
+select throws_ok(
+  $$ truncate public.deployments $$,
+  '42501', 'deployments are archived, not deleted',
+  'the table cannot be truncated'
+);
+select is(
+  (select count(*)::int from public.deployments where hostname = 'fixed.example.com'),
+  1,
+  'the refused delete left the row'
+);
+
+-- Deletion of the organization or system cascades ------------------------------------
 
 delete from public.ai_systems where id = '00000000-0000-4000-8000-0000000000a2';
 

@@ -8,7 +8,8 @@ No application code uses it yet; TASK-012 to TASK-015 build on it.
 
 There was no TASK-011 contract, so this task adds one. Three decisions were
 the owner's (Mikołaj Smoliniec, 2026-09-22). The implementer proposed four
-more, which await the owner.
+more, all accepted on the PR #25 review. Accepted by Mikołaj Smoliniec
+(project owner), 2026-09-22.
 
 ### Decisions
 
@@ -39,10 +40,14 @@ more, which await the owner.
      could read the system as active while an archive of it was committing,
      and land under an archived system. A test holds an archive open in a
      second session and shows the registration waits, then is refused.
-4. **The database checks a hostname's shape, not its safety.** Proposed.
+4. **The database checks a hostname's shape, not its safety.** Accepted.
    - The CHECK wants lowercase ASCII labels of 1 to 63 characters, 253 in
-     all, at least two labels, and a last label with a letter. IDN labels
-     arrive already punycode-encoded.
+     all, at least two labels, and a last label that starts with a letter.
+   - The first version only required the last label to contain a letter,
+     which let `127.0.0.0x1` and `169.254.169.0xfe` through: URL parsers
+     read them as `127.0.0.1` and the metadata address (review finding 1,
+     fixed).
+   - IDN labels arrive already punycode-encoded.
    - That alone refuses every IP literal, `localhost`, ports, paths,
      schemes and credentials. So even a bug in TASK-012 can't store one.
    - Well-formed but unsafe names are TASK-012's to refuse, and Phase 7
@@ -50,16 +55,28 @@ more, which await the owner.
    - Rejected: the whole SSRF list in SQL. It would be a second validator,
      which the plan warns against, and a CHECK can't resolve DNS.
 5. **Status is `active | archived`**, as for AI systems (README §33).
-   Proposed.
-6. **Audit by trigger**, as for AI systems. Proposed.
+   Accepted.
+6. **Audit by trigger**, as for AI systems. Accepted.
    - The events are `deployment.created`, `deployment.archived` and
      `deployment.unarchived`, all without metadata, so the hostname stays
      out of the audit log.
    - The service role can't write deployments, because an event needs an
      actor.
-7. **The public identifier waits for TASK-014.** Proposed. Adding it then,
+7. **The public identifier waits for TASK-014.** Accepted. Adding it then,
    with a generated default, fills existing rows; adding it now would fix
    its format before that task decides it.
+8. **No one deletes a deployment** (review finding 3; owner's choice).
+   - Users never could. Now a trigger refuses the service role and the
+     table owner too, and another refuses `truncate`.
+   - Deleting the organization or AI system still takes its deployments
+     with it: the trigger allows a delete once either parent is gone.
+   - Why: verification history will cascade from deployments (Phase 7), so
+     a single delete would erase it, against README §33.
+   - Rejected: an audit trigger on delete, which records the loss but
+     doesn't stop it.
+   - Downside: removing a deployment for good (a legal request, say) means
+     deleting its AI system, or disabling the trigger as the table owner.
+     The retention policy owed before launch should decide this.
 
 ### Files changed
 
@@ -69,10 +86,10 @@ more, which await the owner.
 - `features/organizations/audit/audit-events.ts`: `deployment.archived`,
   `deployment.unarchived`
 - Tests:
-  - `supabase/tests/deployments.test.sql` (new): 64 pgTAP tests
+  - `supabase/tests/deployments.test.sql` (new): 73 pgTAP tests
   - `tests/security/tenant-isolation/deployments.supabase.ts` (new): 25
     tests, real database
-  - `tests/integration/database/deployments.supabase.ts` (new): 11 tests,
+  - `tests/integration/database/deployments.supabase.ts` (new): 12 tests,
     real database, one of them the archive race
   - `tests/unit/audit/audit-events.test.ts`: the two new event types
 
@@ -83,9 +100,9 @@ more, which await the owner.
 - A deployment in A can't point at B's system: the composite foreign key
   refuses it with the same error as a system that doesn't exist, so this
   reveals nothing about B.
-- Viewers read; members and up write; nobody deletes but the service role,
-  and the service role can't insert or change a deployment either (no
-  actor).
+- Viewers read; members and up write; nobody deletes a deployment except
+  by deleting its organization or AI system. The service role can't insert
+  or change one either (no actor).
 - A soft-deleted organization's deployments can't be read or written.
 - No new security definer function besides the audit trigger, which writes
   only its own fixed rows.
@@ -106,6 +123,16 @@ more, which await the owner.
   - the insert policy admitting viewers: 1 security test fails;
   - hostnames unique per organization instead of per system: 1
     real-database test and pgTAP fail.
+- After the PR #25 review, each also reverted:
+  - the last label only containing a letter (the first version): 1
+    real-database test and pgTAP fail;
+  - no delete trigger: 1 real-database test and pgTAP fail;
+  - no truncate trigger: pgTAP fails;
+  - the delete trigger ignoring the organization and checking only the
+    system: nothing fails. Deleting an organization reaches its deployments
+    through the AI system first today, so the organization check never
+    decides. It stays because Postgres promises no order between the two
+    cascades.
 
 ### Commands run
 
@@ -118,6 +145,13 @@ See the PR. Each gate was run with the owner's untracked
   (`supabase_db_article50`, from `project_id`). It needs Docker, which the
   real-database suites already do; renaming the project breaks it.
   Rejected: adding a Postgres client dependency for one test.
+- **Later code must check the AI system's status too** (review finding
+  2). Archiving a system leaves its deployments active, as the owner
+  decided, so the widget key (TASK-014), the verifier and public pages must
+  treat a deployment of an archived system as inactive. Not yet written
+  into those contracts; whoever writes them should.
+- **The race test's container name** could be read from `supabase status`
+  instead of hard-coded (review finding 4). Not taken in this PR.
 - **A system archived and restored** leaves its deployments as they were.
   The person restores the archived ones by hand; that's intended.
 - **Deploy to production:** this PR has a migration. Merging to `main`

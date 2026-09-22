@@ -103,6 +103,9 @@ describe("a deployment's life", () => {
       "example.com.",
       "localhost",
       "127.0.0.1",
+      // PR #25 review, finding 1: read as 127.0.0.1 and 169.254.169.254.
+      "127.0.0.0x1",
+      "169.254.169.0xfe",
       "https://example.com",
       "example.com:443",
     ]) {
@@ -259,6 +262,23 @@ describe("every change is audited, however it was written", () => {
       .select("id", { count: "exact", head: true })
       .eq("hostname", host);
     expect(count).toBe(0);
+  });
+
+  it("the service role cannot delete a deployment: it is archived instead, and its history kept", async () => {
+    const system = await createSystem();
+    const { data: created } = await create(system, hostname("kept"));
+
+    const { error } = await fixtures.admin
+      .from("deployments")
+      .delete()
+      .eq("id", created?.id as string);
+
+    expect(error?.code).toBe("42501");
+    const { count } = await fixtures.admin
+      .from("deployments")
+      .select("id", { count: "exact", head: true })
+      .eq("id", created?.id as string);
+    expect(count).toBe(1);
   });
 
   it("a refused service-role archive leaves the row and the log as they were", async () => {
