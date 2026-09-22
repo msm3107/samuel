@@ -229,3 +229,70 @@ test("a save from another tab makes this tab's edit stale, and nothing is overwr
   );
   await other.close();
 });
+
+// TASK-015. Shares the session above rather than signing in again (magic
+// links are rate-limited). systemUrl's system was archived by the first
+// test and never restored, so this restores it first; that step is setup,
+// not the flow under test, so it isn't done by keyboard.
+test("registers, archives and restores a deployment by keyboard alone", async () => {
+  const main = page.getByRole("main");
+
+  await page.goto(systemUrl);
+  const restoreSystem = main.getByRole("button", {
+    name: "Restore this system",
+  });
+  if (await restoreSystem.isVisible()) {
+    await restoreSystem.click();
+    await expect(
+      main.getByRole("status").filter({ hasText: "Restored." }),
+    ).toBeVisible();
+  }
+
+  // A refused hostname first, with its own message and nothing registered.
+  await fromTheTop();
+  await tabTo(page.getByLabel("Hostname", { exact: true }));
+  await page.keyboard.type("localhost");
+  await tabTo(main.getByRole("button", { name: "Register hostname" }), 1);
+  await page.keyboard.press("Enter");
+  // The system page has three forms, each with its own live region.
+  const registration = main
+    .getByRole("region", { name: "Deployments" })
+    .getByRole("status");
+  await expect(registration).toContainText("Problem:");
+  await expect(registration).toContainText(
+    "can't be checked from the internet",
+  );
+  await expect(page.getByLabel("Hostname", { exact: true })).toHaveValue(
+    "localhost",
+  );
+
+  // A valid, unique hostname.
+  const host = `e2e-${randomUUID().slice(0, 8)}.example.com`;
+  await fromTheTop();
+  await tabTo(page.getByLabel("Hostname", { exact: true }));
+  await page.keyboard.type(host);
+  await tabTo(main.getByRole("button", { name: "Register hostname" }), 1);
+  await page.keyboard.press("Enter");
+
+  await expect(page).toHaveURL(/\/deployments\/[0-9a-f-]{36}$/);
+  const publicId = main.locator("code");
+  await expect(publicId).toHaveText(/^dep_[a-z2-7]{26}$/);
+  const registeredId = await publicId.textContent();
+
+  // Archive, and hear about it.
+  await fromTheTop();
+  await tabTo(main.getByRole("button", { name: "Archive this deployment" }));
+  await page.keyboard.press("Enter");
+  await expect(
+    main.getByRole("status").filter({ hasText: "Archived." }),
+  ).toBeVisible();
+
+  // Restore: the same public ID comes back.
+  await fromTheTop();
+  await tabTo(main.getByRole("button", { name: "Restore this deployment" }));
+  await page.keyboard.press("Enter");
+  await expect(
+    main.getByRole("status").filter({ hasText: "Restored." }),
+  ).toBeVisible();
+  await expect(publicId).toHaveText(registeredId ?? "");
+});
