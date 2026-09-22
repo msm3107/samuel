@@ -67,7 +67,8 @@ Decided by Mikołaj Smoliniec (project owner), 2026-09-22:
   pass as another name (PR #26 review, note 3). Rejected: ASCII only, which
   makes a real `bücher.de` unreadable.
 
-Proposed by the implementer, awaiting the owner:
+Proposed by the implementer; all eight accepted on the PR #27 review.
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-22.
 
 - **TASK-012's output is the only hostname stored.** The route validates
   the body with Zod (strict; the hostname only bounded at 1,024
@@ -97,6 +98,22 @@ Proposed by the implementer, awaiting the owner:
   the same transaction, without the hostname.
 - **The hostname is never logged.** A refusal logs its code only, as every
   API error does.
+
+## Amendment: the PR #27 review
+
+Decided by Mikołaj Smoliniec (project owner), 2026-09-22; recorded for later
+tasks, with no change to this one's code:
+
+- **For TASK-015's contract** (note 1): `unicodeHostname` can hold
+  right-to-left letters (`xn--4dbc.com` is Hebrew, then `.com`), and a label
+  may mix directions. Show it left-to-right and isolated, as
+  `<bdi dir="ltr">`, beside the ASCII form, never with `dir="auto"`, so the
+  parts of the name always read in DNS order.
+- **For the next migration that touches `deployments`** (note 2): the
+  archived-system trigger also sets a fixed hint, `ai_system_archived`, and
+  the service matches the error code plus that hint instead of the message
+  text, so a reworded message can't turn the 409 into a 500. Not worth a
+  migration on its own.
 
 ## Invariants
 
