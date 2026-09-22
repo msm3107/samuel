@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 import { waitForMagicLink } from "../../supabase/support/mailpit";
-import { SHARED_SESSION_FILE } from "../support/shared-session";
+import { sharedSession } from "../support/shared-session";
 
 /**
  * Sign-in in a real browser against the real local Supabase: the screen asks
@@ -72,7 +72,7 @@ test("closes the dashboard once the session cookies are gone", async ({
   browser,
 }) => {
   const context = await browser.newContext({
-    storageState: SHARED_SESSION_FILE,
+    storageState: sharedSession(),
   });
   const page = await context.newPage();
   await page.goto("/dashboard");

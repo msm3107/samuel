@@ -13,8 +13,14 @@ that only need a signed-in user.
   grows with each new dashboard spec.
 
 The rate limits are unchanged. Two decisions are the owner's (Mikołaj
-Smoliniec, 2026-09-22); four are proposed by the implementer and await the
-owner.
+Smoliniec, 2026-09-22). The implementer proposed four more, all accepted on
+the PR #30 review. Accepted by Mikołaj Smoliniec (project owner),
+2026-09-22.
+
+On the PR #30 review (note 1; owner), a `--no-deps` rerun with a saved
+session over 50 minutes old now stops with "Shared session is stale; rerun
+without --no-deps", rather than a redirect to sign-in that reads like an
+app bug.
 
 ### Decisions
 
@@ -22,13 +28,13 @@ owner.
    The two tests of the link itself still use real links.
 2. **One user, an organization per spec file** (owner). The empty-dashboard
    check moved into the setup.
-3. **A fresh user and session every run**, never an old file: past an hour,
+3. **A fresh user and session every run** (accepted), never an old file: past an hour,
    refresh-token reuse detection would revoke a shared session.
-4. **The session is opted into per context**, so every other spec starts
+4. **The session is opted into per context** (accepted), so every other spec starts
    from an empty browser.
-5. **Saved under `tests/e2e/.auth/`, ignored by git**: a local, throwaway
+5. **Saved under `tests/e2e/.auth/`, ignored by git** (accepted): a local, throwaway
    user's session, rewritten each run.
-6. **The rules for sharing it** (never sign out; stay inside your own
+6. **The rules for sharing it** (accepted) (never sign out; stay inside your own
    organization) are written in `tests/e2e/support/shared-session.ts`.
 
 ### Files changed
@@ -64,6 +70,9 @@ owner.
   the previous run's organization, so the per-file scoping holds.
 - The stub config still lists only its own 18 tests; the setup file isn't
   picked up there.
+- The stale check, with `--no-deps` (no links): a 10-minute-old file
+  passes all 4 dashboard tests; the same file backdated two hours stops
+  with the stale message and nothing else.
 
 ### Commands run
 
@@ -75,7 +84,7 @@ See the PR. Each gate was run with the owner's untracked
 - **Two full runs inside ten minutes still hit the limit** (6 links against
   5). This task stops growth; it doesn't make back-to-back runs possible.
   To rerun one spec quickly, `--no-deps` reuses the last saved session
-  (valid for an hour) and asks for no link.
+  and asks for no link, until the file is 50 minutes old.
 - **A CI retry of the setup asks for one more link.**
 - **Owed from earlier tasks, unchanged:** the database NFC check with the
   next migration on `ai_systems` or `organizations`; TASK-019 must check

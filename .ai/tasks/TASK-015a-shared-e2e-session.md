@@ -50,7 +50,7 @@ Chosen by Mikołaj Smoliniec (project owner), 2026-09-22:
   before any spec creates anything. Rejected: one user per spec file,
   which costs a link per file again.
 
-Proposed by the implementer, awaiting the owner:
+Proposed by the implementer; all four accepted on the PR #30 review. Accepted by Mikołaj Smoliniec (project owner), 2026-09-22.
 
 1. **A fresh user and session every run.** The setup always runs first
    (the specs depend on it) and signs in a new address. An old saved
@@ -66,6 +66,17 @@ Proposed by the implementer, awaiting the owner:
    path** (`tests/e2e/support/shared-session.ts`): never sign out (that
    would revoke it for every other spec; a test about signing out signs in
    for itself), and work only inside an organization of its own.
+
+## Amendment: the PR #30 review
+
+- **A stale saved session stops with its reason** (note 1; chosen by
+  Mikołaj Smoliniec, project owner, 2026-09-22). A rerun with `--no-deps`
+  reuses the last saved session; once that is over 50 minutes old (short
+  of its hour), `sharedSession()` stops the spec with "Shared session is
+  stale; rerun without --no-deps" instead of letting it be sent to sign-in,
+  which would read like an app bug. A normal run writes the file just
+  before, so it always passes. The dashboard spec's `afterAll` no longer
+  adds a second error when its context was never created.
 
 ## Invariants
 

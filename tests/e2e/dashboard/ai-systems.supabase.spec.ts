@@ -8,7 +8,7 @@ import {
   type Page,
 } from "@playwright/test";
 
-import { SHARED_SESSION_FILE } from "../support/shared-session";
+import { sharedSession } from "../support/shared-session";
 
 /**
  * The dashboard in a real browser against the real local Supabase: an
@@ -31,14 +31,16 @@ let systemUrl: string;
 test.beforeAll(async ({ browser }) => {
   // A context, not browser.newPage(), so a test can open a second tab in
   // the same session.
-  context = await browser.newContext({ storageState: SHARED_SESSION_FILE });
+  context = await browser.newContext({ storageState: sharedSession() });
   page = await context.newPage();
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/dashboard$/);
 });
 
 test.afterAll(async () => {
-  await context.close();
+  // Unset when beforeAll failed, such as on a stale shared session; closing
+  // it then would only add a second, misleading error.
+  await context?.close();
 });
 
 // The empty dashboard a new user sees is checked by the shared sign-in's
