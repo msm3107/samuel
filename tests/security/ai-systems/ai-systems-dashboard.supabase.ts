@@ -230,11 +230,20 @@ describe("user A's actions and organization B", () => {
     actAs(userA, clientA);
     const before = await systemRow(systemB);
 
+    // With B's real version, so only the organization can stop the edit.
+    const { data } = await fixtures.admin
+      .from("ai_systems")
+      .select("updated_at")
+      .eq("id", systemB)
+      .single();
+    const takeOver = () =>
+      systemForm("Taken over", { expectedUpdatedAt: data?.updated_at });
+
     const viaB = await runAction(() =>
-      updateAiSystemAction(orgB.id, systemB, null, systemForm("Taken over")),
+      updateAiSystemAction(orgB.id, systemB, null, takeOver()),
     );
     const viaA = await runAction(() =>
-      updateAiSystemAction(orgA.id, systemB, null, systemForm("Taken over")),
+      updateAiSystemAction(orgA.id, systemB, null, takeOver()),
     );
 
     expect(viaB).toMatchObject({ value: { result: "not_permitted" } });

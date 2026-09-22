@@ -1,8 +1,10 @@
 import { AiSystemForm } from "@/components/dashboard/ai-system-form";
 import { Breadcrumbs } from "@/components/dashboard/breadcrumbs";
-import { readOrganization } from "@/features/organizations/organization-queries";
 
-import { organizationAccessOrNotFound } from "../../access";
+import {
+  organizationAccessOrNotFound,
+  organizationOrNotFound,
+} from "../../access";
 import { createAiSystemAction } from "../actions";
 import { systemsPath } from "../messages";
 
@@ -23,7 +25,7 @@ export default async function NewAiSystemPage({
     organizationId,
     "systems.manage",
   );
-  const organization = await readOrganization(access);
+  const organization = await organizationOrNotFound(access);
 
   return (
     <main id="main" className="mx-auto max-w-2xl px-6 py-12">

@@ -1,4 +1,5 @@
 import {
+  aiSystemVersionSchema,
   createAiSystemSchema,
   SYSTEM_TYPES,
   type CreateAiSystemInput,
@@ -74,15 +75,27 @@ export function parseAiSystemForm(formData: unknown): ParsedAiSystemForm {
   return { success: true, data: parsed.data, values };
 }
 
+/** The hidden field carrying the version the edit form was loaded from. */
+export const VERSION_FIELD = "expectedUpdatedAt";
+
 /**
  * The same form as an edit: all four fields are sent, so the change names
  * them all. The database writes an audit event only for fields whose value
  * really changed (TASK-008).
+ *
+ * The edit applies only to the version the form was loaded from (TASK-010
+ * review, finding 1): `version` is that version, or `null` when the form
+ * sent none or something that isn't one. The action refuses an edit without
+ * a version rather than save it blind.
  */
 export function parseAiSystemEditForm(formData: unknown) {
+  const submitted =
+    formData instanceof FormData ? formData.get(VERSION_FIELD) : undefined;
+  const parsedVersion = aiSystemVersionSchema.safeParse(submitted);
+  const version = parsedVersion.success ? parsedVersion.data : null;
   const parsed = parseAiSystemForm(formData);
   if (!parsed.success) {
-    return parsed;
+    return { ...parsed, version };
   }
   const { name, systemType, provider, description } = parsed.data;
   const data: UpdateAiSystemInput = {
@@ -90,8 +103,9 @@ export function parseAiSystemEditForm(formData: unknown) {
     systemType,
     provider: provider ?? null,
     description: description ?? null,
+    ...(version === null ? {} : { expectedUpdatedAt: version }),
   };
-  return { ...parsed, data };
+  return { ...parsed, data, version };
 }
 
 /** A stored system, as the form shows it. */

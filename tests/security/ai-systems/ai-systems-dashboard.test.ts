@@ -13,6 +13,7 @@ const calls = vi.hoisted(() => ({
   permissions: [] as { organizationId: string; permission: string }[],
   queries: [] as string[],
   role: "viewer" as string,
+  organizationDeleted: false,
 }));
 
 vi.mock("@/lib/auth/require-session", () => ({
@@ -49,6 +50,13 @@ vi.mock("@/lib/auth/require-organization-role", async () => {
 vi.mock("@/features/ai-systems/ai-system-queries", () => {
   const record = (name: string) => async () => {
     calls.queries.push(name);
+    // As the database answers for a deleted organization: RLS hides its
+    // systems, so the list is empty and a system is not there.
+    if (calls.organizationDeleted) {
+      return name === "listAiSystems"
+        ? { aiSystems: [], truncated: false }
+        : null;
+    }
     throw new Error(`${name} must not be reached in this suite`);
   };
   return {
@@ -60,12 +68,19 @@ vi.mock("@/features/ai-systems/ai-system-queries", () => {
   };
 });
 
-vi.mock("@/features/organizations/organization-queries", () => ({
-  readOrganization: async () => {
-    calls.queries.push("readOrganization");
-    throw new Error("readOrganization must not be reached in this suite");
-  },
-}));
+vi.mock("@/features/organizations/organization-queries", async () => {
+  const { AuthorizationError } = await import("@/lib/auth/errors");
+  return {
+    readOrganization: async () => {
+      calls.queries.push("readOrganization");
+      // Deleted after the access check: readOrganization's own refusal.
+      if (calls.organizationDeleted) {
+        throw new AuthorizationError();
+      }
+      throw new Error("readOrganization must not be reached in this suite");
+    },
+  };
+});
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
@@ -92,6 +107,7 @@ function systemForm() {
 beforeEach(() => {
   calls.permissions = [];
   calls.queries = [];
+  calls.organizationDeleted = false;
 });
 
 describe("every write action asks for systems.manage, for the bound organization", () => {
@@ -171,5 +187,29 @@ describe("every page asks for the permission its screen needs", () => {
 
     expect(outcome).toEqual({ kind: "not_found" });
     expect(calls.queries).toEqual([]);
+  });
+
+  it("an organization deleted after the access check is not found, on every page (TASK-010 review)", async () => {
+    calls.role = "owner";
+    calls.organizationDeleted = true;
+
+    const pages = [
+      () =>
+        AiSystemsPage({
+          params: Promise.resolve({ organizationId: ORG }),
+          searchParams: Promise.resolve({}),
+        }),
+      () =>
+        NewAiSystemPage({ params: Promise.resolve({ organizationId: ORG }) }),
+      () =>
+        AiSystemPage({
+          params: Promise.resolve({ organizationId: ORG, systemId: SYSTEM }),
+        }),
+    ];
+
+    for (const page of pages) {
+      const outcome = await renderPage(page);
+      expect(outcome).toEqual({ kind: "not_found" });
+    }
   });
 });

@@ -35,6 +35,8 @@ export const AI_SYSTEM_FORM_MESSAGES = {
   not_permitted:
     "You no longer have permission to change this organization's AI systems.",
   not_found: "This system is no longer in this organization.",
+  stale:
+    "Someone changed this system since you opened it, so nothing was saved. Reload the page to see their changes; what you typed stays in the form until you do.",
   saved: "Changes saved.",
 } as const;
 
@@ -48,6 +50,8 @@ export type AiSystemFormState = Readonly<{
   result: AiSystemFormResult;
   fields: readonly AiSystemFormField[];
   values: AiSystemFormValues;
+  /** After a save: the version now stored, for the next edit to name. */
+  version?: string;
 }> | null;
 
 export const AI_SYSTEM_STATUS_MESSAGES = {

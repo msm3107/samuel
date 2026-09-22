@@ -159,6 +159,7 @@ describe("formValuesOf", () => {
         provider: null,
         description: null,
         status: "active",
+        updatedAt: "2026-09-22T10:00:00.123456+00:00",
       }),
     ).toEqual({
       name: "Support bot",

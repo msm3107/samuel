@@ -89,6 +89,11 @@ export async function updateAiSystemAction(
   if (!form.success) {
     return { result: "invalid", fields: form.fields, values: form.values };
   }
+  // No version, no save: the form always sends one, so only a forged or
+  // broken request lacks it, and saving it blind could overwrite someone.
+  if (form.version === null) {
+    return { result: "stale", fields: [], values: form.values };
+  }
 
   const result = await refusedAsNotPermitted(() =>
     updateAiSystem(access, id.data, form.data),
@@ -98,15 +103,21 @@ export async function updateAiSystemAction(
   }
 
   refreshScreens(access.organizationId, id.data);
-  // What was stored, trimmed and normalized, rather than what was typed.
+  // What was stored, trimmed and normalized, rather than what was typed,
+  // and the version the next edit must name.
   return {
     result: "saved",
     fields: [],
     values: formValuesOf(result.aiSystem),
+    version: result.aiSystem.updatedAt,
   };
 }
 
-/** Archives a system, or restores an archived one. */
+/**
+ * Archives a system, or restores an archived one. No version is checked:
+ * this changes only the status, so it can't undo anyone's edit, and a
+ * second archive of an archived system changes nothing.
+ */
 export async function setAiSystemStatusAction(
   organizationId: string,
   systemId: string,
@@ -133,6 +144,10 @@ export async function setAiSystemStatusAction(
   const result = await refusedAsNotPermitted(() =>
     updateAiSystem(access, id.data, { status: target.data }),
   );
+  if (result.status === "stale") {
+    // No version was named, so the database cannot answer this.
+    throw new Error("A status change without a version was refused as stale");
+  }
   if (result.status !== "ok") {
     return { result: result.status };
   }

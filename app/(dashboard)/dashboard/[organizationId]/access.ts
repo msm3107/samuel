@@ -2,6 +2,8 @@ import "server-only";
 
 import { notFound } from "next/navigation";
 
+import type { SerializedOrganization } from "@/features/organizations/organization";
+import { readOrganization } from "@/features/organizations/organization-queries";
 import { AuthorizationError } from "@/lib/auth/errors";
 import type { OrganizationPermission } from "@/lib/auth/organization-roles";
 import {
@@ -27,6 +29,25 @@ export async function organizationAccessOrNotFound(
   await requireDashboardSession();
   try {
     return await requireOrganizationPermission({ organizationId, permission });
+  } catch (error) {
+    if (error instanceof AuthorizationError) {
+      notFound();
+    }
+    throw error;
+  }
+}
+
+/**
+ * The organization's name and slug, for the page's heading. An organization
+ * deleted between the access check and this read is refused like any other
+ * (`readOrganization` throws `AuthorizationError`), so it renders the same
+ * not-found page (TASK-010 review, finding 2).
+ */
+export async function organizationOrNotFound(
+  access: OrganizationAccess,
+): Promise<SerializedOrganization> {
+  try {
+    return await readOrganization(access);
   } catch (error) {
     if (error instanceof AuthorizationError) {
       notFound();

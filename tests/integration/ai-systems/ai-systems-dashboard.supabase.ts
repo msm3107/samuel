@@ -76,6 +76,16 @@ async function setStatus(id: string, status: string) {
   );
 }
 
+/** The version the edit form would have loaded, as the database prints it. */
+async function versionOf(id: string): Promise<string> {
+  const { data } = await fixtures.admin
+    .from("ai_systems")
+    .select("updated_at")
+    .eq("id", id)
+    .single();
+  return data?.updated_at as string;
+}
+
 async function row(id: string) {
   const { data } = await fixtures.admin
     .from("ai_systems")
@@ -142,6 +152,7 @@ describe("a member, from the dashboard", () => {
   it("edits it, and the form shows what was stored", async () => {
     const id = await register({ provider: "Acme", description: "Old." });
     const name = `Renamed ${randomUUID().slice(0, 8)}`;
+    const loaded = await versionOf(id);
 
     const outcome = await runAction(() =>
       updateAiSystemAction(
@@ -153,10 +164,13 @@ describe("a member, from the dashboard", () => {
           systemType: "assistant",
           provider: "",
           description: "",
+          expectedUpdatedAt: loaded,
         }),
       ),
     );
 
+    const stored = await versionOf(id);
+    expect(stored).not.toBe(loaded);
     expect(outcome).toEqual({
       kind: "returned",
       value: {
@@ -168,6 +182,8 @@ describe("a member, from the dashboard", () => {
           provider: "",
           description: "",
         },
+        // The next edit names the version just stored.
+        version: stored,
       },
     });
     expect(await row(id)).toMatchObject({
@@ -181,13 +197,19 @@ describe("a member, from the dashboard", () => {
   it("audits only the fields that changed, though the form sends all four", async () => {
     const name = `Audited ${randomUUID().slice(0, 8)}`;
     const id = await register({ name, provider: "Acme" });
+    const loaded = await versionOf(id);
 
     await runAction(() =>
       updateAiSystemAction(
         org.id,
         id,
         null,
-        systemForm({ name, provider: "Acme", description: "Now described." }),
+        systemForm({
+          name,
+          provider: "Acme",
+          description: "Now described.",
+          expectedUpdatedAt: loaded,
+        }),
       ),
     );
 
@@ -273,5 +295,105 @@ describe("a member, from the dashboard", () => {
       value: { result: "name_taken" },
     });
     expect((await row(first))?.status).toBe("archived");
+  });
+
+  it("two people editing one system: the second save is refused, not applied over the first (TASK-010 review)", async () => {
+    const name = `Shared ${randomUUID().slice(0, 8)}`;
+    const id = await register({ name, provider: "Original" });
+    // Both open the edit form now, and so both hold this version.
+    const loaded = await versionOf(id);
+
+    // Ben changes the provider and saves first.
+    const ben = await runAction(() =>
+      updateAiSystemAction(
+        org.id,
+        id,
+        null,
+        systemForm({
+          name,
+          provider: "Ben's vendor",
+          expectedUpdatedAt: loaded,
+        }),
+      ),
+    );
+    // Anna fixed the name, with the provider as she loaded it, and saves second.
+    const annaTyped = {
+      name: `${name} fixed`,
+      systemType: "chatbot",
+      provider: "Original",
+      description: "",
+      expectedUpdatedAt: loaded,
+    };
+    const anna = await runAction(() =>
+      updateAiSystemAction(org.id, id, null, form(annaTyped)),
+    );
+
+    expect(ben).toMatchObject({ value: { result: "saved" } });
+    expect(anna).toEqual({
+      kind: "returned",
+      value: {
+        result: "stale",
+        fields: [],
+        values: {
+          name: annaTyped.name,
+          systemType: "chatbot",
+          provider: "Original",
+          description: "",
+        },
+      },
+    });
+    // Ben's change stands, and Anna's rename wasn't applied either.
+    expect(await row(id)).toMatchObject({ name, provider: "Ben's vendor" });
+  });
+
+  it("an edit that names no version is refused, and nothing is written", async () => {
+    const name = `Unversioned ${randomUUID().slice(0, 8)}`;
+    const id = await register({ name });
+
+    for (const version of [undefined, "", "not-a-timestamp"]) {
+      const outcome = await runAction(() =>
+        updateAiSystemAction(
+          org.id,
+          id,
+          null,
+          systemForm({
+            name: `${name} changed`,
+            ...(version === undefined ? {} : { expectedUpdatedAt: version }),
+          }),
+        ),
+      );
+      expect(outcome).toMatchObject({ value: { result: "stale" } });
+    }
+    expect((await row(id))?.name).toBe(name);
+  });
+
+  it("archiving needs no version, and a later edit names the new one", async () => {
+    const id = await register();
+    const before = await versionOf(id);
+
+    expect(await setStatus(id, "archived")).toMatchObject({
+      value: { result: "archived" },
+    });
+
+    const after = await versionOf(id);
+    expect(after).not.toBe(before);
+    const stale = await runAction(() =>
+      updateAiSystemAction(
+        org.id,
+        id,
+        null,
+        systemForm({ expectedUpdatedAt: before }),
+      ),
+    );
+    const current = await runAction(() =>
+      updateAiSystemAction(
+        org.id,
+        id,
+        null,
+        systemForm({ expectedUpdatedAt: after }),
+      ),
+    );
+    expect(stale).toMatchObject({ value: { result: "stale" } });
+    expect(current).toMatchObject({ value: { result: "saved" } });
   });
 });

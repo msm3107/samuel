@@ -16,6 +16,7 @@ import {
 } from "@/app/(dashboard)/dashboard/[organizationId]/systems/messages";
 import {
   SYSTEM_TYPE_LABELS,
+  VERSION_FIELD,
   type AiSystemFormField,
   type AiSystemFormValues,
 } from "@/features/ai-systems/ai-system-form";
@@ -29,6 +30,8 @@ type AiSystemFormProps = {
   ) => Promise<AiSystemFormState>;
   /** What the inputs start with: blank, or the stored system. */
   initialValues: AiSystemFormValues;
+  /** The stored system's version, for an edit form; none for a new one. */
+  initialVersion?: string;
   submitLabel: string;
   pendingLabel: string;
 };
@@ -44,19 +47,43 @@ type AiSystemFormProps = {
 export function AiSystemForm({
   action,
   initialValues,
+  initialVersion,
   submitLabel,
   pendingLabel,
 }: AiSystemFormProps) {
   const [state, formAction, isPending] = useActionState(action, null);
   const [values, setValues] = useState(state?.values ?? initialValues);
+  // The version an edit names: the one the form was loaded from, then the
+  // one each save returns (TASK-010 review, finding 1).
+  const [version, setVersion] = useState(state?.version ?? initialVersion);
 
-  // A new result puts its values in the inputs. Adjusted during render, as
-  // React recommends for state that follows another, not in an effect.
+  // A new result puts its values, and after a save its version, in the form.
+  // Adjusted during render, as React recommends for state that follows
+  // another, not in an effect.
   const [shownState, setShownState] = useState(state);
   if (state !== shownState) {
     setShownState(state);
     if (state !== null) {
       setValues(state.values);
+      if (state.version !== undefined) {
+        setVersion(state.version);
+      }
+    }
+  }
+
+  // The page re-rendered with a newer stored system, after an archive or a
+  // restore for instance. An untouched form takes it on; a form with typed
+  // changes keeps its older version, so saving them is refused as stale
+  // rather than silently applied over whatever changed.
+  const [loaded, setLoaded] = useState({
+    values: initialValues,
+    version: initialVersion,
+  });
+  if (initialVersion !== loaded.version) {
+    setLoaded({ values: initialValues, version: initialVersion });
+    if (sameValues(values, loaded.values)) {
+      setValues(initialValues);
+      setVersion(initialVersion);
     }
   }
 
@@ -113,6 +140,9 @@ export function AiSystemForm({
       noValidate
       className="mt-6 space-y-5"
     >
+      {version === undefined ? null : (
+        <input type="hidden" name={VERSION_FIELD} value={version} />
+      )}
       <div className="space-y-2">
         <label htmlFor={idOf("name")} className="block text-sm font-medium">
           Name
@@ -230,5 +260,14 @@ export function AiSystemForm({
         {statusText}
       </p>
     </form>
+  );
+}
+
+function sameValues(a: AiSystemFormValues, b: AiSystemFormValues): boolean {
+  return (
+    a.name === b.name &&
+    a.systemType === b.systemType &&
+    a.provider === b.provider &&
+    a.description === b.description
   );
 }

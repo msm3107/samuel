@@ -9,10 +9,12 @@ import {
   SYSTEM_TYPE_LABELS,
 } from "@/features/ai-systems/ai-system-form";
 import { readAiSystem } from "@/features/ai-systems/ai-system-queries";
-import { readOrganization } from "@/features/organizations/organization-queries";
 import { minimumRoleFor, roleSatisfies } from "@/lib/auth/organization-roles";
 
-import { organizationAccessOrNotFound } from "../../access";
+import {
+  organizationAccessOrNotFound,
+  organizationOrNotFound,
+} from "../../access";
 import { setAiSystemStatusAction, updateAiSystemAction } from "../actions";
 import { systemsPath } from "../messages";
 
@@ -39,7 +41,7 @@ export default async function AiSystemPage({
     notFound();
   }
   const [organization, aiSystem] = await Promise.all([
-    readOrganization(access),
+    organizationOrNotFound(access),
     readAiSystem(access, id.data),
   ]);
   if (aiSystem === null) {
@@ -104,6 +106,7 @@ export default async function AiSystemPage({
                 aiSystem.id,
               )}
               initialValues={formValuesOf(aiSystem)}
+              initialVersion={aiSystem.updatedAt}
               submitLabel="Save changes"
               pendingLabel="Saving…"
             />

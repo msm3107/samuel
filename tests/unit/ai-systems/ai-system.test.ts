@@ -172,7 +172,7 @@ describe("aiSystemListFilterSchema", () => {
 });
 
 describe("serializeAiSystem", () => {
-  it("sends six fields and drops the rest", () => {
+  it("sends seven fields and drops the rest", () => {
     expect(
       serializeAiSystem({
         id: "0f6b2a4c-8d1e-4f3a-9b5c-6e7d8a9b0c1d",
@@ -183,7 +183,7 @@ describe("serializeAiSystem", () => {
         provider: "OpenAI",
         status: "active",
         created_at: "2026-09-21T00:00:00Z",
-        updated_at: "2026-09-21T00:00:00Z",
+        updated_at: "2026-09-21T10:00:00.123456+00:00",
       }),
     ).toEqual({
       id: "0f6b2a4c-8d1e-4f3a-9b5c-6e7d8a9b0c1d",
@@ -192,6 +192,8 @@ describe("serializeAiSystem", () => {
       systemType: "chatbot",
       provider: "OpenAI",
       status: "active",
+      // The database's string, microseconds included (TASK-010 review).
+      updatedAt: "2026-09-21T10:00:00.123456+00:00",
     });
   });
 

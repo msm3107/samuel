@@ -72,8 +72,20 @@ export const createAiSystemSchema = z.strictObject({
 export type CreateAiSystemInput = z.infer<typeof createAiSystemSchema>;
 
 /**
+ * A system's version: its `updatedAt`, exactly as the database printed it.
+ * Kept as the database's string, never re-formatted through `Date`, which
+ * would drop the microseconds and never match again.
+ */
+export const aiSystemVersionSchema = z.iso.datetime({ offset: true });
+
+/**
  * A change. Any subset of the editable fields, at least one. `null` clears
  * the description or provider; `status` archives or un-archives.
+ *
+ * `expectedUpdatedAt` is not a field: it makes the change apply only if the
+ * system is still the version the client last saw (TASK-010 review, finding
+ * 1). Optional, so archiving needs no read first; the dashboard's edit form
+ * always sends it.
  */
 export const updateAiSystemSchema = z
   .strictObject({
@@ -82,8 +94,13 @@ export const updateAiSystemSchema = z
     description: aiSystemDescriptionSchema.nullable().optional(),
     provider: aiSystemProviderSchema.nullable().optional(),
     status: z.enum(SYSTEM_STATUSES).optional(),
+    expectedUpdatedAt: aiSystemVersionSchema.optional(),
   })
-  .refine((change) => Object.keys(change).length > 0);
+  .refine(
+    (change) =>
+      Object.keys(change).filter((key) => key !== "expectedUpdatedAt").length >
+      0,
+  );
 
 export type UpdateAiSystemInput = z.infer<typeof updateAiSystemSchema>;
 
@@ -98,7 +115,8 @@ export type AiSystemListFilter = z.infer<typeof aiSystemListFilterSchema>;
  * What a client is sent about a system (README §66). Built field by field
  * from a validated row, so a column added to the table is never passed
  * through by accident. The organization is not repeated: the client asked
- * under it.
+ * under it. `updatedAt` is the version an edit names (TASK-010 review,
+ * finding 1; owner, 2026-09-22).
  */
 export type SerializedAiSystem = Readonly<{
   id: string;
@@ -107,6 +125,7 @@ export type SerializedAiSystem = Readonly<{
   systemType: (typeof SYSTEM_TYPES)[number];
   provider: string | null;
   status: (typeof SYSTEM_STATUSES)[number];
+  updatedAt: string;
 }>;
 
 const aiSystemRowSchema = z.object({
@@ -116,6 +135,7 @@ const aiSystemRowSchema = z.object({
   system_type: z.enum(SYSTEM_TYPES),
   provider: z.string().nullable(),
   status: z.enum(SYSTEM_STATUSES),
+  updated_at: aiSystemVersionSchema,
 });
 
 export function serializeAiSystem(row: unknown): SerializedAiSystem {
@@ -127,9 +147,10 @@ export function serializeAiSystem(row: unknown): SerializedAiSystem {
     systemType: parsed.system_type,
     provider: parsed.provider,
     status: parsed.status,
+    updatedAt: parsed.updated_at,
   });
 }
 
 /** The columns every query selects: exactly what the serializer reads. */
 export const AI_SYSTEM_COLUMNS =
-  "id, name, description, system_type, provider, status";
+  "id, name, description, system_type, provider, status, updated_at";

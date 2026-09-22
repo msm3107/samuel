@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 
 import { waitForMagicLink } from "../../supabase/support/mailpit";
 
@@ -10,17 +16,23 @@ import { waitForMagicLink } from "../../supabase/support/mailpit";
  * registered, archived and found again by keyboard alone (TASK-010, the
  * plan's exit criterion for Phase 3). Run with `pnpm test:e2e:supabase`.
  *
- * One sign-in serves both tests. Magic links are limited to five per network
+ * One sign-in serves all three tests. Magic links are limited to five per network
  * every ten minutes (TASK-003c), the suite already asks for three more, and
- * CI retries a failed test, so every sign-in spent here is one less retry.
+ * CI retries a failed test, so every sign-in spent here is one less retry. The third test opens a second tab in the same session, so
+ * it needs none.
  */
 test.describe.configure({ mode: "serial" });
 
+let context: BrowserContext;
 let page: Page;
 let organizationName: string;
+let systemUrl: string;
 
 test.beforeAll(async ({ browser }) => {
-  page = await browser.newPage();
+  // A context, not browser.newPage(), so a test can open a second tab in
+  // the same session.
+  context = await browser.newContext();
+  page = await context.newPage();
   const address = `e2e-${randomUUID()}@example.test`;
   await page.goto("/sign-in");
   await page.getByLabel("Email address").fill(address);
@@ -31,7 +43,7 @@ test.beforeAll(async ({ browser }) => {
 });
 
 test.afterAll(async () => {
-  await page.close();
+  await context.close();
 });
 
 // Moved from sign-in.supabase.spec.ts, to share the sign-in above.
@@ -70,9 +82,9 @@ async function focusRingOf(element: Locator) {
  * reached: something on the way would be a keyboard trap, or `target` is
  * not focusable.
  */
-async function tabTo(target: Locator, maxStops = 40) {
+async function tabTo(target: Locator, maxStops = 40, key = "Tab") {
   for (let stop = 0; stop < maxStops; stop += 1) {
-    await page.keyboard.press("Tab");
+    await page.keyboard.press(key);
     const focused = page.locator(":focus");
     expect(await focusRingOf(focused)).toEqual({
       focused: true,
@@ -159,6 +171,19 @@ test("registers, archives and finds an AI system by keyboard alone", async () =>
     main.getByRole("button", { name: "Restore this system" }),
   ).toBeVisible();
 
+  // Edit after archiving. The archive stored a newer version; the untouched
+  // edit form took it on, so this save isn't refused as stale.
+  systemUrl = page.url();
+  // Backwards, without a reload, as the form sits above the archive button.
+  await tabTo(page.getByLabel("Description (optional)"), 10, "Shift+Tab");
+  await page.keyboard.press("Control+A");
+  await page.keyboard.type("Answers the phone, in English.");
+  await tabTo(page.getByRole("button", { name: "Save changes" }), 1);
+  await page.keyboard.press("Enter");
+  await expect(
+    main.getByRole("status").filter({ hasText: "Changes saved." }),
+  ).toBeVisible();
+
   // Back to the list: gone from the active systems, found under Archived.
   await fromTheTop();
   await tabTo(page.getByRole("link", { name: "AI systems", exact: true }));
@@ -170,4 +195,37 @@ test("registers, archives and finds an AI system by keyboard alone", async () =>
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/systems\?status=archived$/);
   await expect(main.getByRole("link", { name: systemName })).toBeVisible();
+});
+
+// TASK-010 review, finding 1. A second tab shares the session, so this
+// needs no sign-in of its own.
+test("a save from another tab makes this tab's edit stale, and nothing is overwritten", async () => {
+  const other = await context.newPage();
+  await Promise.all([page.goto(systemUrl), other.goto(systemUrl)]);
+
+  // The other tab saves first.
+  await other.getByLabel("Provider (optional)").fill("Other tab's vendor");
+  await other.getByRole("button", { name: "Save changes" }).click();
+  await expect(
+    other.getByRole("status").filter({ hasText: "Changes saved." }),
+  ).toBeVisible();
+
+  // This tab still holds the version it loaded.
+  await page.getByLabel("Name", { exact: true }).fill("Renamed in this tab");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Someone changed this system" }),
+  ).toBeVisible();
+  // What was typed stays; the other tab's change stands.
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
+    "Renamed in this tab",
+  );
+  await other.reload();
+  await expect(other.getByLabel("Provider (optional)")).toHaveValue(
+    "Other tab's vendor",
+  );
+  await expect(other.getByLabel("Name", { exact: true })).not.toHaveValue(
+    "Renamed in this tab",
+  );
+  await other.close();
 });

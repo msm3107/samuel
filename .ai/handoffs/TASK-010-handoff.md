@@ -8,8 +8,8 @@ Viewers see the list and each system, with no write control. Each
 organization on the dashboard links to its systems.
 
 There was no TASK-010 contract, so this task adds one. The URL shape was the
-owner's choice (Mikołaj Smoliniec, 2026-09-21); the other decisions are the
-implementer's and await the owner's review.
+owner's choice (Mikołaj Smoliniec, 2026-09-21). The other nine decisions
+were proposed by the implementer and accepted on the PR #24 review. Accepted by Mikołaj Smoliniec (project owner), 2026-09-22.
 
 ### Decisions
 
@@ -91,6 +91,47 @@ implementer's and await the owner's review.
       only by colour.
     - The dashboard's organization form gained the same focus outline.
 
+13. **Stale saves are refused** (review finding 1; owner's choice,
+    2026-09-22).
+    - The scenario: Anna and Ben open the same system. Ben changes the
+      provider and saves; Anna then saves a rename, and her form still holds
+      the old provider. Before this, Anna's save silently undid Ben's.
+    - Now the form carries the version it was loaded from (`updatedAt`) in a
+      hidden field. The update matches it in the same SQL statement, so
+      there is no gap between checking and writing. Anna is told "Someone
+      changed this system since you opened it", nothing is written, and
+      what she typed stays in the form.
+    - Why a version and not "send only changed fields": the reviewer's pick.
+      Changed-fields-only still loses one of two edits to the same field,
+      silently.
+    - Why `updatedAt` and not a new counter: it already exists and a trigger
+      sets it on every update, so no migration is needed. It is kept as the
+      database's exact string; going through `Date` would drop the
+      microseconds, and it would never match again.
+    - On the API, `expectedUpdatedAt` is optional, so an archive needs no
+      read first; a stale one is 409 `ai_system_changed`. The dashboard's
+      edit form always sends it, and the action refuses an edit without one
+      rather than save it blind.
+    - An edit that matches nothing costs one more read, and only then, to
+      tell "stale" from "not found". A system in another organization is
+      still 404, never 409.
+    - Archive and restore name no version: they change only the status, so
+      they can't undo an edit.
+    - After an archive, the page re-renders with a newer version. An
+      untouched edit form takes it on. A form with typed changes keeps the
+      older one, so saving them is refused rather than applied over the
+      change.
+    - Downside: `updatedAt` is now a seventh response field, reversing
+      TASK-009's six-field decision (which expected it).
+14. **An organization deleted mid-render is "not found"** (review finding 2).
+    The pages read it through `organizationOrNotFound`, which turns
+    `readOrganization`'s `AuthorizationError` into the not-found page.
+    - It runs alongside the list or system query, as before.
+    - The review's "saves a read" upside isn't available here. The access
+      check reads the membership, not the organization, and returning the
+      organization from it would mean changing `lib/auth`, which this task
+      may not touch.
+
 ### Files changed
 
 - `.ai/tasks/TASK-010-ai-systems-dashboard.md` (new): the contract
@@ -109,18 +150,27 @@ implementer's and await the owner's review.
   and `breadcrumbs.tsx` (new)
 - `components/ui/styles.ts` (new): shared class lists
 - `features/ai-systems/ai-system-form.ts` (new): form parsing and labels
+- `features/ai-systems/ai-system.ts`, `ai-system-queries.ts` and
+  `app/api/organizations/[organizationId]/ai-systems/[systemId]/route.ts`:
+  `updatedAt`, `expectedUpdatedAt` and 409 `ai_system_changed` (review
+  finding 1; out of contract, recorded in the contract's amendment)
 - `components/dashboard/.gitkeep`, `components/ui/.gitkeep`: removed
 - Tests:
   - `tests/unit/ai-systems/ai-system-form.test.ts` (new): 14 tests
-  - `tests/security/ai-systems/ai-systems-dashboard.test.ts` (new): 6
-    tests, fakes: which permission each page and action asks for
+  - `tests/security/ai-systems/ai-systems-dashboard.test.ts` (new): 7
+    tests, fakes: which permission each page and action asks for, and a
+    deleted organization
   - `tests/security/ai-systems/ai-systems-dashboard.supabase.ts` (new): 18
     tests, real database
   - `tests/integration/ai-systems/ai-systems-dashboard.supabase.ts` (new):
-    7 tests, real database
-  - `tests/e2e/dashboard/ai-systems.supabase.spec.ts` (new): 2 tests, real
-    browser and Supabase. One is the organization test moved from
-    `tests/e2e/auth/sign-in.supabase.spec.ts`, to share a sign-in.
+    10 tests, real database, three of them on stale saves
+  - TASK-009's suites: the seventh field, and `expectedUpdatedAt` (3 more
+    fake-suite tests and 2 more real-database tests)
+  - `tests/e2e/dashboard/ai-systems.supabase.spec.ts` (new): 3 tests, real
+    browser and Supabase, on one sign-in. One is the organization test
+    moved from `tests/e2e/auth/sign-in.supabase.spec.ts`. The keyboard test
+    also saves an edit after archiving, and a third test saves from a
+    second tab to make the first tab's edit stale.
   - `tests/security/tenant-isolation/support/acting-user.ts`: the harness
     gains `requireDashboardSession`
   - `tests/support/next-interrupts.ts` (new): out of contract, recorded in
@@ -155,6 +205,16 @@ implementer's and await the owner's review.
   - the form reading every field: 1 fails;
   - the status action skipping the UUID check: 1 fails;
   - links without a focus outline: the keyboard e2e test fails.
+- After the PR #24 review, each also reverted:
+  - no version filter in the update: 3 real-database tests and 1
+    fake-suite test fail;
+  - the action saving an edit that names no version: 1 real-database
+    test fails;
+  - the version re-formatted through `Date`, losing microseconds: 4
+    real-database tests fail;
+  - a deleted organization not mapped to 404: 1 fake-suite test fails;
+  - the edit form not taking on the version an archive stored: the
+    keyboard e2e test fails.
 
 ### Commands run
 
@@ -162,6 +222,14 @@ See the PR. Each gate was run with the owner's untracked
 `CODEX-SECURITY.md` set aside and restored, and its hash verified.
 
 ### Remaining concerns
+
+- **Two tabs of the same person** are two editors too: saving in one makes
+  the other's form stale. That's intended, as the other tab could hold
+  older values.
+- **A stale form keeps what was typed but not what changed:** the person
+  reloads to see the other save, and copies their text over. Showing both
+  side by side would be a merge screen, not worth building for a
+  four-field form.
 
 - **Magic links in the real-browser suite:** 4 sign-ins against a limit of
   5 per network per 10 minutes. The organization test now shares the

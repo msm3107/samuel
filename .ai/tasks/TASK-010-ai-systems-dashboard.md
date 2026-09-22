@@ -67,7 +67,7 @@ Files this adds beyond the list above, recorded here:
   that break for other members) and slugs (a second way to name an
   organization, and one more lookup per page).
 
-The rest are the implementer's, awaiting the owner's review:
+The rest were proposed by the implementer; all nine were accepted on the PR #24 review. Accepted by Mikołaj Smoliniec (project owner), 2026-09-22.
 
 - **Server actions, not `fetch` to the API.** The forms post to server
   actions that call TASK-009's query functions, as the organization form
@@ -108,6 +108,35 @@ The rest are the implementer's, awaiting the owner's review:
   visible `focus-visible` outline on each; a skip link to the main content;
   the current filter marked `aria-current`; each form's result announced in
   a live region.
+
+## Amendment: the PR #24 review
+
+- **Stale saves are refused** (finding 1; chosen by Mikołaj Smoliniec,
+  project owner, 2026-09-22):
+  - `updatedAt` joins the response as a seventh field. TASK-009's six-field
+    decision expected this: timestamps would be added "when a screen needs
+    them".
+  - An edit may name the version it was based on, `expectedUpdatedAt`. The
+    update then matches that version in the same statement, so an edit
+    based on an older version writes nothing.
+  - On the API, a stale edit is 409 `ai_system_changed`. The field is
+    optional there, so archiving needs no read first.
+  - The dashboard's edit form always sends it, and an edit without a valid
+    one is refused.
+  - Archive and restore name no version: they change only the status, so
+    they can't undo anyone's edit.
+  - This changes files outside the list above, and `app/api/**`, which it
+    forbids. That is the owner's decision; each is recorded here:
+    - `features/ai-systems/ai-system.ts` and `ai-system-queries.ts`;
+    - `app/api/organizations/[organizationId]/ai-systems/[systemId]/route.ts`;
+    - TASK-009's tests: `tests/unit/ai-systems/ai-system.test.ts` and
+      `tests/security/ai-systems/ai-systems-api.test.ts` (under the list),
+      and `tests/integration/ai-systems/ai-systems-api.supabase.ts`.
+- **An organization deleted mid-render is "not found"** (finding 2). The
+  pages read it through `organizationOrNotFound`, which turns
+  `readOrganization`'s refusal into the same not-found page.
+- **Sharing one sign-in across the browser suites** (finding 3) was not
+  taken; the owner kept it out of this PR.
 
 ## Invariants
 

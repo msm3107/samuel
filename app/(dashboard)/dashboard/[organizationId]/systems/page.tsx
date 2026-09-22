@@ -11,10 +11,12 @@ import {
   AI_SYSTEM_LIST_LIMIT,
   listAiSystems,
 } from "@/features/ai-systems/ai-system-queries";
-import { readOrganization } from "@/features/organizations/organization-queries";
 import { minimumRoleFor, roleSatisfies } from "@/lib/auth/organization-roles";
 
-import { organizationAccessOrNotFound } from "../access";
+import {
+  organizationAccessOrNotFound,
+  organizationOrNotFound,
+} from "../access";
 import { systemPath, systemsPath } from "./messages";
 
 type PageProps = {
@@ -50,7 +52,7 @@ export default async function AiSystemsPage({
   );
   const filter = listFilter((await searchParams).status);
   const [organization, { aiSystems, truncated }] = await Promise.all([
-    readOrganization(access),
+    organizationOrNotFound(access),
     listAiSystems(access, filter),
   ]);
   const canManage = roleSatisfies(
