@@ -51,6 +51,7 @@ type Body = {
     systemType: string;
     provider: string | null;
     status: string;
+    updatedAt: string;
   };
 };
 
@@ -143,6 +144,7 @@ describe("a member's round trip", () => {
       "provider",
       "status",
       "systemType",
+      "updatedAt",
     ]);
     expect(aiSystem).toMatchObject({
       name,
@@ -315,5 +317,55 @@ describe("names", () => {
       .sort();
 
     expect(statuses).toEqual([201, 409, 409, 409, 409]);
+  });
+
+  it("an edit based on an older version is 409 ai_system_changed, and writes nothing (TASK-010 review)", async () => {
+    actAs(member, memberClient);
+    const created = (await (
+      await create({
+        name: `Versioned ${randomUUID().slice(0, 8)}`,
+        systemType: "chatbot",
+      })
+    ).json()) as Body;
+    const loaded = created.aiSystem.updatedAt;
+
+    // Ben saves first, from the version both of them loaded.
+    const ben = await patch(created.aiSystem.id, {
+      provider: "Ben's vendor",
+      expectedUpdatedAt: loaded,
+    });
+    // Anna saves second, from the same, now older, version.
+    const anna = await patch(created.aiSystem.id, {
+      provider: "Anna's vendor",
+      expectedUpdatedAt: loaded,
+    });
+
+    expect(ben.status).toBe(200);
+    const saved = ((await ben.json()) as Body).aiSystem;
+    expect(saved.updatedAt).not.toBe(loaded);
+    expect(anna.status).toBe(409);
+    expect((await readError(anna)).code).toBe("ai_system_changed");
+    const now = ((await (await get(created.aiSystem.id)).json()) as Body)
+      .aiSystem;
+    expect(now.provider).toBe("Ben's vendor");
+
+    // From the current version, the edit applies.
+    const retried = await patch(created.aiSystem.id, {
+      provider: "Anna's vendor",
+      expectedUpdatedAt: saved.updatedAt,
+    });
+    expect(retried.status).toBe(200);
+  });
+
+  it("a version for a system that isn't there is still 404, not 409", async () => {
+    actAs(member, memberClient);
+
+    const response = await patch(randomUUID(), {
+      name: "Nothing",
+      expectedUpdatedAt: "2026-09-21T10:00:00.123456+00:00",
+    });
+
+    expect(response.status).toBe(404);
+    expect((await readError(response)).code).toBe("ai_system_not_found");
   });
 });

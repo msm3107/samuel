@@ -77,6 +77,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       if (result.status === "name_taken") {
         throw new ApiRequestError(409, "ai_system_name_taken");
       }
+      // `expectedUpdatedAt` named an older version (TASK-010 review).
+      if (result.status === "stale") {
+        throw new ApiRequestError(409, "ai_system_changed");
+      }
       return jsonResponse({ aiSystem: result.aiSystem });
     },
   );

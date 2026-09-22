@@ -81,6 +81,16 @@ Proposed by the implementer; all seven accepted on the PR #23 review. Accepted b
   when that phase is designed (reviewer's recommendation, recorded for the
   widget phase).
 
+## Amendment: the PR #24 review (TASK-010)
+
+- **Seven response fields:** `updatedAt` is added, as this contract's
+  "timestamps are added when a screen needs them" foresaw.
+- **`PATCH` may name `expectedUpdatedAt`,** and applies only if the system
+  is still that version; otherwise 409 `ai_system_changed`. It is optional,
+  and a body naming only it is 400. Decided by Mikołaj Smoliniec (project
+  owner), 2026-09-22; recorded in TASK-010's contract, which made the
+  change.
+
 ## Invariants
 
 - Route order: same-origin check (writes) → authenticate → authorize →

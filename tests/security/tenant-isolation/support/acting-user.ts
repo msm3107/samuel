@@ -52,15 +52,28 @@ async function authenticationError() {
   return new AuthenticationError("session_missing");
 }
 
-export const requireSessionModule = {
-  requireSession: async () => {
-    const actor = currentActor();
-    if (actor === null) {
-      throw await authenticationError();
-    }
-    return Object.freeze({ userId: actor.userId });
-  },
-};
+async function requireSession() {
+  const actor = currentActor();
+  if (actor === null) {
+    throw await authenticationError();
+  }
+  return Object.freeze({ userId: actor.userId });
+}
+
+/**
+ * `requireDashboardSession` as dashboard pages and actions call it (TASK-010):
+ * with no actor, the redirect to sign-in the real one makes.
+ */
+async function requireDashboardSession() {
+  if (currentActor() === null) {
+    const { redirect } = await import("next/navigation");
+    const { SIGN_IN_PATH } = await import("@/lib/auth/protected-routes");
+    redirect(SIGN_IN_PATH);
+  }
+  return requireSession();
+}
+
+export const requireSessionModule = { requireSession, requireDashboardSession };
 
 export const sessionClientModule = {
   createResolvingSessionClient: async () => {

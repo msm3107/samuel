@@ -119,6 +119,7 @@ const ROW = {
   system_type: "chatbot",
   provider: null,
   status: "active",
+  updated_at: "2026-09-21T10:00:00.123456+00:00",
 };
 
 function collectionContext() {
@@ -344,14 +345,67 @@ describe("a list says when it was cut short (PR #23 review)", () => {
   });
 });
 
+describe("an edit names the version it was based on (TASK-010 review)", () => {
+  const VERSION = "2026-09-21T10:00:00.123456+00:00";
+
+  function patchWith(body: unknown) {
+    return patchSystem(
+      apiRequest("PATCH", `/api/organizations/${ORG}/ai-systems/${SYSTEM}`, {
+        body,
+      }),
+      itemContext(),
+    );
+  }
+
+  it("the update matches that version too, and does not write it", async () => {
+    state.aiSystemsResult = { data: ROW, error: null };
+
+    const response = await patchWith({
+      name: "Renamed",
+      expectedUpdatedAt: VERSION,
+    });
+
+    expect(response.status).toBe(200);
+    const update = aiSystemQueries().find(
+      (query) => query.operation === "update",
+    );
+    expect(update?.filters).toContainEqual(["updated_at", VERSION]);
+    expect(update?.payload).toEqual({ name: "Renamed" });
+  });
+
+  it("without a version, the update is not filtered by one", async () => {
+    state.aiSystemsResult = { data: ROW, error: null };
+
+    await patchWith({ status: "archived" });
+
+    const update = aiSystemQueries().find(
+      (query) => query.operation === "update",
+    );
+    expect(update?.filters.map(([column]) => column)).not.toContain(
+      "updated_at",
+    );
+  });
+
+  it("a version alone is not a change, and a version must be a timestamp", async () => {
+    for (const body of [
+      { expectedUpdatedAt: VERSION },
+      { name: "Renamed", expectedUpdatedAt: "yesterday" },
+      { name: "Renamed", expectedUpdatedAt: 1 },
+    ]) {
+      const response = await patchWith(body);
+      expect(response.status).toBe(400);
+      expect((await readError(response)).code).toBe("invalid_request");
+    }
+  });
+});
+
 describe("what reaches the client", () => {
-  it("six fields, whatever else the database returns", async () => {
+  it("seven fields, whatever else the database returns", async () => {
     state.aiSystemsResult = {
       data: {
         ...ROW,
         organization_id: ORG,
         created_at: "2026-09-21T00:00:00Z",
-        updated_at: "2026-09-21T00:00:00Z",
       },
       error: null,
     };
@@ -369,6 +423,7 @@ describe("what reaches the client", () => {
         systemType: "chatbot",
         provider: null,
         status: "active",
+        updatedAt: "2026-09-21T10:00:00.123456+00:00",
       },
     });
   });

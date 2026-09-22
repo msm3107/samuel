@@ -45,9 +45,11 @@ type Created = { status: "ok"; aiSystem: SerializedAiSystem };
 type NameTaken = { status: "name_taken" };
 /** No such system in this organization, including another's system. */
 type NotFound = { status: "not_found" };
+/** Changed since the version the client named: nothing was written. */
+type Stale = { status: "stale" };
 
 export type CreateAiSystemResult = Created | NameTaken;
-export type UpdateAiSystemResult = Created | NameTaken | NotFound;
+export type UpdateAiSystemResult = Created | NameTaken | NotFound | Stale;
 
 /** The database refused in a way no validated request should cause. */
 export class AiSystemQueryError extends Error {
@@ -138,19 +140,32 @@ export async function updateAiSystem(
 ): Promise<UpdateAiSystemResult> {
   assertAccessAllows(access, "systems.manage");
   const { supabase } = await createResolvingSessionClient();
-  const { data, error } = await supabase
+  let update = supabase
     .from("ai_systems")
     .update(toColumns(change))
     .eq("organization_id", access.organizationId)
-    .eq("id", systemId)
-    .select(AI_SYSTEM_COLUMNS)
-    .maybeSingle();
+    .eq("id", systemId);
+  // Compare and set, in the one statement: a change based on an older
+  // version matches no row, so it can't overwrite someone else's save.
+  if (change.expectedUpdatedAt !== undefined) {
+    update = update.eq("updated_at", change.expectedUpdatedAt);
+  }
+  const { data, error } = await update.select(AI_SYSTEM_COLUMNS).maybeSingle();
   if (error) {
     return refusal(error);
   }
-  return data === null
-    ? { status: "not_found" }
-    : { status: "ok", aiSystem: serializeAiSystem(data) };
+  if (data !== null) {
+    return { status: "ok", aiSystem: serializeAiSystem(data) };
+  }
+  // Nothing matched. Only on this path, and only when a version was named,
+  // one more read tells a stale version from a system that isn't there.
+  if (
+    change.expectedUpdatedAt !== undefined &&
+    (await readAiSystem(access, systemId)) !== null
+  ) {
+    return { status: "stale" };
+  }
+  return { status: "not_found" };
 }
 
 /** Only the fields the change names, so an omitted field is left alone. */
