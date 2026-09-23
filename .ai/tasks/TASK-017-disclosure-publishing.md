@@ -80,7 +80,8 @@ From the PR #31 review (owner, 2026-09-22):
 - **`lib/validation/text.ts` mirrors the one-line rule**, U+2028 and
   U+2029 included.
 
-Proposed by the implementer, awaiting the owner:
+Proposed by the implementer; all eight accepted on the PR #32 review.
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-23.
 
 1. **The stale check is a database function; plain inserts stay
    allowed.** `publish_disclosure` runs as the caller, so RLS and every
@@ -112,6 +113,35 @@ Proposed by the implementer, awaiting the owner:
    who published).
 8. **No audit calls in the application.** TASK-016's trigger writes
    `disclosure.published`, without the message.
+
+## Amendment: the PR #32 review
+
+Decided by Mikołaj Smoliniec (project owner), 2026-09-23:
+
+- **The migration and the code ship together** (note 1), although the
+  route calls `publish_disclosure`, which exists only once the migration
+  has run. Between Vercel's deploy and Supabase's migration a publish
+  would answer 500. Nothing calls the endpoint until TASK-018, and
+  reading history is unaffected, so the window can't be reached.
+  Rejected: two PRs, correct by the migration-before-code rule but a
+  second review and deploy for a gap nobody can hit. **The rule stands
+  from TASK-018 on**, where a screen will depend on the endpoint.
+- **Paging is TASK-018a** (note 3), in Phase 5: a "before version N"
+  parameter on the history endpoint and the screen's way to older
+  versions. The cap of 200 hides older versions, which are evidence, but
+  no customer will approach 200 before Phase 5 ends. Rejected: paging in
+  this PR, which would delay TASK-018 and change a reviewed endpoint;
+  and a note with no task.
+- **For TASK-018's contract** (note 2): the screen treats the history the
+  endpoint returns as the truth, never its own idea of the current
+  version, because a direct Data API insert can add a version without
+  the stale check.
+- Out of contract, with the owner's standing permission: `.ai/PLAN.md`
+  gains TASK-018a in Phase 5's task list. Recorded here as the amendment
+  that permission asks for.
+- Not changed (note 4): adding the validated NFC constraints locks
+  `organizations` and `ai_systems` while they are scanned. At the
+  production row counts, that is milliseconds.
 
 ## Invariants
 

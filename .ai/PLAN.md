@@ -193,7 +193,11 @@ code.
 **Goal.** An organization can configure the disclosure text a deployment shows.
 
 **Tasks.** TASK-016 (schema + RLS + immutability constraint), TASK-017
-(versioning service), TASK-018 (configuration UI).
+(versioning service), TASK-018 (configuration UI), TASK-018a (paging the
+version history: a "before version N" parameter and the screen's way to
+older versions; PR #32 review, note 3, Mikołaj Smoliniec, project owner,
+2026-09-23. The history endpoint caps at 200, and older versions are
+evidence).
 
 **Depends on.** Phase 3.
 

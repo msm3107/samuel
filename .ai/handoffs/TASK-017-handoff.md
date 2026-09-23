@@ -21,7 +21,12 @@ The migration also carries the two rules owed on older tables:
 
 There was no TASK-017 contract, so this task adds one. Four decisions are
 the owner's (Mikołaj Smoliniec, 2026-09-22), and four more come from the
-PR #31 review. The implementer proposes eight, awaiting the owner.
+PR #31 review. The implementer proposed eight, all accepted on the PR #32
+review. Accepted by Mikołaj Smoliniec (project owner), 2026-09-23.
+
+On the PR #32 review (owner): the migration and the code ship together,
+as a known exception to the migration-before-code rule (note 1); paging
+the history becomes TASK-018a in Phase 5 (note 3).
 
 ### Before merging: check production for non-NFC names
 
@@ -60,17 +65,17 @@ where name is not nfc normalized
 8. **The one-line rule is mirrored** in `lib/validation/text.ts` (PR #31
    review, note 2).
 9. **The stale check is a database function; plain inserts stay allowed**
-   (proposed). See the contract for why.
+   (accepted). See the contract for why.
 10. **Hints `disclosure_changed` and `disclosure_unchanged`, code `PT409`**
-    (proposed).
-11. **`23505` is `disclosure_changed`** (proposed): only a concurrent direct
+    (accepted).
+11. **`23505` is `disclosure_changed`** (accepted): only a concurrent direct
     insert can reach it.
 12. **The GET is one query**, capped at 200, with `aiSystemStatus`
-    (proposed).
-13. **`enabled` is required** (proposed).
-14. **The message is counted in code points** (proposed).
-15. **Response fields** include `createdBy` (proposed).
-16. **No audit calls in the application** (proposed).
+    (accepted).
+13. **`enabled` is required** (accepted).
+14. **The message is counted in code points** (accepted).
+15. **Response fields** include `createdBy` (accepted).
+16. **No audit calls in the application** (accepted).
 
 ### Files changed
 
@@ -152,11 +157,21 @@ See the PR. Each gate was run with the owner's untracked
 
 ### Remaining concerns
 
+- **The migration and the code ship together** (PR #32 review, note 1;
+  owner). The route calls `publish_disclosure`, which exists only after
+  the migration; until then a publish would answer 500. No screen calls
+  it before TASK-018, so nothing can reach that window. The
+  migration-before-code rule holds from TASK-018 on.
+- **Paging the history is TASK-018a** (PR #32 review, note 3; owner), in
+  Phase 5.
 - **This PR has a migration.** Supabase's "Deploy to production" applies
   it on merge. It changes `ai_systems` and `organizations` (new
   constraints and a delete trigger) and replaces TASK-016's version
   trigger. Run the query above first.
 - **For TASK-018's contract:**
+  - the history the endpoint returns is the truth, never the screen's own
+    idea of the current version: a direct Data API insert can add a
+    version without the stale check (PR #32 review, note 2);
   - show `disclosure_changed` with a way to load the newer version, and
     `disclosure_unchanged` as "nothing changed", not as an error of the
     person's text;

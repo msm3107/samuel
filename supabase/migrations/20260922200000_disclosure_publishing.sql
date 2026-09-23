@@ -1,6 +1,7 @@
 -- Publishing disclosures (TASK-017), and two rules owed on older tables.
 --
--- Decided by Mikołaj Smoliniec (project owner), 2026-09-22:
+-- Decided by Mikołaj Smoliniec (project owner), 2026-09-22; the whole
+-- design accepted on the PR #32 review, 2026-09-23:
 --   * A stale publish is refused. A publish names
 --     the version it was based on; if a newer one exists, it is refused
 --     with the fixed hint `disclosure_changed`, as TASK-010 refuses a stale
