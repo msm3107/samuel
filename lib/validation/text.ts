@@ -43,3 +43,16 @@ const FORMAT_CHARACTER = /(?!\u200d)\p{Cf}/u;
 export function hasFormatCharacter(value: string): boolean {
   return FORMAT_CHARACTER.test(value);
 }
+
+/**
+ * The line and paragraph separators, U+2028 and U+2029. Browsers break a
+ * line at both, and Postgres's `[[:cntrl:]]` doesn't match them, so text
+ * that must stay on one line (a disclosure message) refuses them
+ * separately, as the `disclosures_message_check` constraint does (PR #31
+ * review, note 2).
+ */
+const LINE_OR_PARAGRAPH_SEPARATOR = /[\u2028\u2029]/u;
+
+export function hasLineOrParagraphSeparator(value: string): boolean {
+  return LINE_OR_PARAGRAPH_SEPARATOR.test(value);
+}

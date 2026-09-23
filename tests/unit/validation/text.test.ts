@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { organizationNameSchema } from "@/features/organizations/organization";
-import { hasControlCharacter, hasFormatCharacter } from "@/lib/validation/text";
+import {
+  hasControlCharacter,
+  hasFormatCharacter,
+  hasLineOrParagraphSeparator,
+} from "@/lib/validation/text";
 
 /**
  * The application's and the database's definitions of "format character"
@@ -124,6 +128,30 @@ describe("hasControlCharacter", () => {
 
   it("allows ordinary text", () => {
     expect(hasControlCharacter("Acme Ltd.")).toBe(false);
+  });
+});
+
+describe("hasLineOrParagraphSeparator", () => {
+  it.each([
+    ["a line separator, U+2028", "Line\u2028break"],
+    ["a paragraph separator, U+2029", "Para\u2029break"],
+    ["both, in one string", "a\u2028b\u2029c"],
+  ])("finds %s", (_label, value) => {
+    expect(hasLineOrParagraphSeparator(value)).toBe(true);
+  });
+
+  it("allows ordinary text", () => {
+    expect(hasLineOrParagraphSeparator("Acme Ltd.")).toBe(false);
+  });
+
+  it("does not mistake an ordinary line feed or carriage return for one of these (a separate rule catches those)", () => {
+    expect(hasLineOrParagraphSeparator("a\nb")).toBe(false);
+    expect(hasLineOrParagraphSeparator("a\rb")).toBe(false);
+  });
+
+  it("finds the separator at either end, not only inside", () => {
+    expect(hasLineOrParagraphSeparator("\u2028leading")).toBe(true);
+    expect(hasLineOrParagraphSeparator("trailing\u2029")).toBe(true);
   });
 });
 
