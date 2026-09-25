@@ -60,7 +60,16 @@ as $$
     and d.version = (
       select max(d2.version)
       from public.disclosures d2
-      where d2.ai_system_id = dep.ai_system_id
+      -- The organization is written out rather than left to the primary
+      -- key (PR #35 review, note 2). It is redundant today: ai_systems.id
+      -- is unique, and the composite foreign key forces a disclosure's
+      -- organization to agree with its system's. This is the one function
+      -- in the schema that bypasses RLS, so its tenant binding is stated
+      -- here rather than resting on a fact stated elsewhere. It changes no
+      -- plan: (ai_system_id, version) is still the index, and this filters
+      -- rows already fetched.
+      where d2.organization_id = dep.organization_id
+        and d2.ai_system_id = dep.ai_system_id
     )
     and d.enabled;
 $$;

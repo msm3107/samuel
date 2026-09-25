@@ -222,15 +222,25 @@ database level, proven by an integration test rather than by convention.
 
 **Goal.** One script tag renders the disclosure on a customer site.
 
-**Tasks.** TASK-019 (public configuration endpoint with rate limiting),
-TASK-020 (`widget.js`), TASK-021 (installation instructions in the dashboard).
+**Tasks.** TASK-019 (the public disclosure lookup: a `security definer`
+function granted to `anon`, in its own migration), TASK-019a (the public
+configuration endpoint that calls it, with rate limiting, CORS and caching),
+TASK-020 (`widget.js`), TASK-021 (installation instructions in the
+dashboard).
+
+TASK-019 is two pull requests because the lookup is a migration and the
+endpoint reads it: a migration adding a function the application reads ships
+before the code that reads it (owner, 2026-09-25; PR #35).
 
 **Depends on.** Phases 4 and 5.
 
-**Shared primitive.** Rate limiting lands here (`lib/security/rate-limit.ts`)
-because the public endpoint is the first unauthenticated surface. Phase 10
-reuses it for webhooks and Phase 1's sign-in should adopt it retroactively in
-the same task — not a new implementation.
+**Shared primitive.** Rate limiting was planned to land here, because the
+public endpoint is the first unauthenticated surface. It landed earlier
+instead: `lib/security/rate-limit.ts` was written in Phase 1 for sign-in
+(TASK-003c), so TASK-019a adds entries to `RATE_LIMITS` and calls
+`consumeRateLimit` rather than writing a second implementation — which is
+what this paragraph asked for either way. Phase 10 reuses the same one for
+webhooks.
 
 **Security invariants introduced.**
 

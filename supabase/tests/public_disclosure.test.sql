@@ -8,7 +8,7 @@
 -- Runs with `pnpm test:db`; everything rolls back.
 begin;
 
-select plan(16);
+select plan(17);
 
 -- Fixtures ------------------------------------------------------------------------
 
@@ -220,6 +220,33 @@ select ok(
     where p.oid = 'public.public_disclosure(text)'::regprocedure
   ),
   'the lookup is stable and security definer: it reads, and it never writes'
+);
+
+-- The revoke, not only the grants (PR #35 review, note 1). A function is
+-- executable by PUBLIC by default, and `create or replace` keeps existing
+-- privileges -- but a later task that adds a column to the return type must
+-- drop and recreate this function, and the new one starts executable by
+-- PUBLIC again. Asserting only who may call would pass straight through
+-- that.
+--
+-- `proacl is not null` is the part that makes this a real test: on a
+-- function whose privileges were never touched, proacl is null, aclexplode
+-- returns nothing, and the `not exists` below would pass while PUBLIC in
+-- fact holds execute by default.
+select ok(
+  (
+    select p.proacl is not null
+    from pg_proc p
+    where p.oid = 'public.public_disclosure(text)'::regprocedure
+  )
+  and not exists (
+    select 1
+    from pg_proc p, aclexplode(p.proacl) a
+    where p.oid = 'public.public_disclosure(text)'::regprocedure
+      and a.grantee = 0
+      and a.privilege_type = 'EXECUTE'
+  ),
+  'PUBLIC holds no execute on the public lookup: exactly three roles do'
 );
 
 select * from finish();

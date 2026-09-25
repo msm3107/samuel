@@ -70,7 +70,8 @@ Chosen by Mikołaj Smoliniec (project owner), 2026-09-25:
 
 ## Proposed by the implementer
 
-Each awaits the owner's sign-off.
+All ten accepted on the PR #35 review. Accepted by Mikołaj Smoliniec
+(project owner), 2026-09-25.
 
 1. **`public.public_disclosure(p_public_id text)`**, returning
    `table (version integer, language text, message text)`. A set-returning
@@ -166,3 +167,74 @@ Each awaits the owner's sign-off.
   function called as the widget's client will call it, proving the grant
   works through the API and that the response carries only the three
   fields.
+
+## Amendment: the PR #35 review
+
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-25. Five
+non-blocking notes; two changed the migration, one settled a question the
+route would have built on, two are recorded and owed elsewhere.
+
+- **Note 1, the revoke was the one line no test pinned. Applied.**
+  `create or replace function` keeps existing privileges, so today's grants
+  are stable — but a function cannot be replaced when its return type
+  changes, and the later `learn_more_url` task must therefore drop and
+  create this one again. A freshly created function is executable by
+  `PUBLIC`. The suite as written asserted only who may call, never who may
+  not, so it would have passed through that silently. The new assertion
+  requires `proacl is not null` before checking that no entry grants
+  execute to grantee 0: without that, a function whose privileges were
+  never touched has a null `proacl`, `aclexplode` returns nothing, and the
+  check passes while `PUBLIC` in fact holds execute by default.
+- **Note 2, the tenant predicate in the `max(version)` subquery. Applied.**
+  The subquery matched on `ai_system_id` alone while the join two lines
+  above binds by `(organization_id, ai_system_id)`. Correct today, because
+  `ai_systems.id` is unique and the composite foreign key forces the
+  organization to agree — but this is the one function in the schema that
+  bypasses RLS, and it was the one place its tenant binding rested on a
+  fact stated elsewhere. The predicate changes no plan:
+  `(ai_system_id, version)` is still the index and this filters rows
+  already fetched.
+- **Note 3, `version` stays in the response.** The question was whether a
+  field nothing currently reads earns its place on the most exposed
+  endpoint in the system. It does: this product exists to make a notice
+  citable, and an auditor who fetches the public endpoint and records
+  "version 7 was live on this date" has evidence, where the text alone may
+  since have changed. README §11 already documents it. The cost is real
+  and accepted: anyone holding a public identifier learns how often that
+  notice has been revised. Rejected: dropping it until something reads it,
+  and replacing it with an opaque digest, which serves a cache but not the
+  auditor.
+- **Note 4, a mistyped identifier must fail legibly at the boundary.**
+  Owed to TASK-019a. `isPublicDeploymentId` refuses anything but exact
+  lowercase base32, so a wrong-cased identifier fails the shape check;
+  TASK-019a must answer it with a clear refusal rather than letting it
+  through to the same empty result a turned-off notice gives. The shape is
+  public knowledge, so refusing on shape is no oracle: it says nothing
+  about which deployments exist.
+- **Note 5, the key rotation now has a concrete consequence.** Owed, not
+  here. Before this migration a leaked anon key could do nothing in this
+  schema — no execute, no select. After it, a holder of that key can call
+  this function directly against PostgREST, outside TASK-019a's route, its
+  rate limit and its cache. The exposure is small: a public identifier is
+  still needed, 26 base32 characters is about 130 bits, and the data is
+  meant for the public. But "it could do nothing" stops being the answer on
+  the day this merges, which is a reason to rotate sooner.
+
+### Recorded: why proposal 9 holds
+
+`SUPABASE_ANON_KEY` is read only through `serverEnv()`. There is no
+`NEXT_PUBLIC_` Supabase variable and no browser-held key anywhere in the
+application, so the only route to this function is the Next.js endpoint,
+where TASK-019a's rate limit and cache live. That is an architectural
+property rather than a stated rule, and it is what makes "no rate limiting
+in the function" correct. A future change that called Supabase directly
+from the widget would undo it.
+
+### Out of contract
+
+- `.ai/PLAN.md`: Phase 6's task list now names TASK-019 (the lookup) and
+  TASK-019a (the endpoint), and its "shared primitive" paragraph says rate
+  limiting landed in Phase 1 (TASK-003c) and is reused here rather than
+  written again. The plan is not in this task's Allowed files; the owner
+  asked for both corrections on this branch (2026-09-25) under their
+  standing permission to edit outside the list.
