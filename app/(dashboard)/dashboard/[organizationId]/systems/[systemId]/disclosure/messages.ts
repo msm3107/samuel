@@ -1,8 +1,8 @@
-import type {
-  DisclosureFormField,
-  DisclosureFormValues,
+import {
+  DISCLOSURE_MESSAGE_MAX_LENGTH,
+  type DisclosureFormField,
+  type DisclosureFormValues,
 } from "@/features/disclosures/disclosure-fields";
-import { DISCLOSURE_MESSAGE_MAX_LENGTH } from "@/features/disclosures/disclosure";
 
 /**
  * What the disclosure editor can report (TASK-018), each with fixed text.

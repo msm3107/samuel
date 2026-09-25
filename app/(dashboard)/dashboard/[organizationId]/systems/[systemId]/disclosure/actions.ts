@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { EMPTY_DISCLOSURE_FORM_VALUES } from "@/features/disclosures/disclosure-fields";
 import {
+  disclosureFormValues,
   formValuesOf,
   parseDisclosureForm,
 } from "@/features/disclosures/disclosure-form";
@@ -38,14 +38,16 @@ export async function publishDisclosureAction(
     organizationId,
     "disclosures.manage",
   );
-  // Authorized before the form is read, as the API route checks permission
-  // before reading the body. A refused caller gets nothing back, not even
-  // what they typed.
+  // Authorized before anything is validated, as the API route checks
+  // permission before reading the body: a refused caller reaches no rule,
+  // no schema and no query. Their own text does come back, so a role
+  // changed mid-edit costs nobody their notice (PR #33 review, note 3); it
+  // is the sender's own input, rendered only as a control's value.
   if (access === null) {
     return {
       result: "not_permitted",
       fields: [],
-      values: EMPTY_DISCLOSURE_FORM_VALUES,
+      values: disclosureFormValues(formData),
     };
   }
   const form = parseDisclosureForm(formData);

@@ -152,6 +152,11 @@ test("reaches the disclosure screen, publishes, edits and turns the notice off, 
   await fromTheTop();
   await tabTo(messageField);
   await page.keyboard.type(firstText);
+  // The counter says where the real limit is, counted as the server counts
+  // it (PR #33 review, note 2).
+  await expect(
+    main.getByText(`${firstText.length} of 500 characters.`),
+  ).toBeVisible();
   await tabTo(languageField, 1);
   await page.keyboard.type("English");
   await expect(languageField).toHaveValue("en");

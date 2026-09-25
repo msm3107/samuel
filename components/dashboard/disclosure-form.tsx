@@ -15,9 +15,11 @@ import {
   type DisclosureFormState,
 } from "@/app/(dashboard)/dashboard/[organizationId]/systems/[systemId]/disclosure/messages";
 import { FOCUS_RING, PRIMARY_BUTTON, TEXT_INPUT } from "@/components/ui/styles";
-import { DISCLOSURE_MESSAGE_MAX_LENGTH } from "@/features/disclosures/disclosure";
 import {
+  countCharacters,
   DISCLOSURE_LANGUAGE_OPTIONS,
+  DISCLOSURE_MESSAGE_INPUT_LIMIT,
+  DISCLOSURE_MESSAGE_MAX_LENGTH,
   ENABLED_FIELD,
   LANGUAGE_FIELD,
   MESSAGE_FIELD,
@@ -102,6 +104,7 @@ export function DisclosureForm({
   const errorIdOf = (field: DisclosureFormField) => `${baseId}-${field}-error`;
   const enabledId = `${baseId}-enabled`;
   const messageHint = `${baseId}-message-hint`;
+  const messageCount = `${baseId}-message-count`;
   const enabledHint = `${baseId}-enabled-hint`;
 
   const statusText = isPending
@@ -157,14 +160,18 @@ export function DisclosureForm({
           name={MESSAGE_FIELD}
           required
           rows={3}
-          maxLength={DISCLOSURE_MESSAGE_MAX_LENGTH}
+          maxLength={DISCLOSURE_MESSAGE_INPUT_LIMIT}
           dir="auto"
           value={values.message}
           onChange={changeText("message")}
           aria-invalid={invalid.has("message")}
-          aria-describedby={describedBy("message", messageHint)}
+          aria-describedby={describedBy(
+            "message",
+            `${messageHint} ${messageCount}`,
+          )}
           className={TEXT_INPUT}
         />
+        <CharacterCount id={messageCount} value={values.message} />
         {fieldError("message")}
       </div>
 
@@ -246,6 +253,29 @@ export function DisclosureForm({
         {statusText}
       </p>
     </form>
+  );
+}
+
+/**
+ * How much of the notice is used, counted in code points as the server
+ * counts it (PR #33 review, note 2). The textarea's own limit is twice the
+ * number of characters, because HTML counts UTF-16 units, so it can never
+ * cut a notice the server would take; this says where the real limit is.
+ * Polite rather than assertive, so it isn't announced on every keystroke.
+ */
+function CharacterCount({ id, value }: { id: string; value: string }) {
+  const used = countCharacters(value);
+  const over = used > DISCLOSURE_MESSAGE_MAX_LENGTH;
+  return (
+    <p
+      id={id}
+      aria-live="polite"
+      className={`text-sm ${over ? "text-red-800" : "text-slate-700"}`}
+    >
+      {over ? "Problem: " : ""}
+      {used} of {DISCLOSURE_MESSAGE_MAX_LENGTH} characters
+      {over ? ", which is too long to publish" : ""}.
+    </p>
   );
 }
 

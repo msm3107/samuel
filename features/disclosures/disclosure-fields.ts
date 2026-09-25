@@ -6,6 +6,28 @@ import { DISCLOSURE_LANGUAGES, type DisclosureLanguage } from "./languages";
  * apart from these, so a client component never pulls the schemas in.
  */
 
+/**
+ * How long a notice may be, counted as the table counts it: code points,
+ * not UTF-16 units. It lives here, beside the labels, rather than beside
+ * the schema that enforces it (PR #33 review, note 4): the editor needs it,
+ * and this module is the one the client may import. `disclosure.ts` takes it
+ * from here, so there is still one number.
+ */
+export const DISCLOSURE_MESSAGE_MAX_LENGTH = 500;
+
+/**
+ * What the textarea's own `maxLength` allows. A code point is at most two
+ * UTF-16 units, which is what HTML counts, so this can never cut a notice
+ * the server would accept. Past 500 code points the server refuses it, and
+ * the counter below the field says so first.
+ */
+export const DISCLOSURE_MESSAGE_INPUT_LIMIT = DISCLOSURE_MESSAGE_MAX_LENGTH * 2;
+
+/** Characters as the server counts them: code points, not UTF-16 units. */
+export function countCharacters(value: string): number {
+  return [...value].length;
+}
+
 export const MESSAGE_FIELD = "message";
 export const LANGUAGE_FIELD = "language";
 export const ENABLED_FIELD = "enabled";

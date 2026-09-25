@@ -96,6 +96,16 @@ export function formValuesOf(
   };
 }
 
+/**
+ * The three fields as they were typed, with nothing validated: what a
+ * refusal puts back in the editor, so a role changed mid-edit does not cost
+ * someone their notice (PR #33 review, note 3). It parses nothing and
+ * queries nothing, so a caller with no permission still reaches no rule.
+ */
+export function disclosureFormValues(formData: unknown): DisclosureFormValues {
+  return submittedValues(formData);
+}
+
 function submittedValues(formData: unknown): DisclosureFormValues {
   if (!(formData instanceof FormData)) {
     return EMPTY_DISCLOSURE_FORM_VALUES;

@@ -75,7 +75,8 @@ Chosen by Mikołaj Smoliniec (project owner), 2026-09-23:
   same table with its own messages and tests, and whose effect (a new
   permanent version) is less plain than a checkbox's.
 
-Proposed by the implementer; these await the owner's sign-off.
+Proposed by the implementer; all eleven accepted on the PR #33 review.
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-25.
 
 1. **Server actions calling TASK-017's queries**, as TASK-010 and TASK-015
    do, not `fetch` to the API route. They work without JavaScript, and
@@ -124,6 +125,45 @@ Proposed by the implementer; these await the owner's sign-off.
     wrapping and carries `dir="auto"`: no HTML, no markdown, no
     `dangerouslySetInnerHTML`, as Phase 5's invariant requires.
 
+## Amendment: the PR #33 review
+
+Decided by Mikołaj Smoliniec (project owner), 2026-09-25:
+
+- **`CODEX-SECURITY.md` is in `.prettierignore`** (note 1). A standing note
+  is a promise; the ignore file is a mechanism, and it works for every agent
+  and every session. The owner's untracked review file was reformatted by a
+  plain `pnpm format` on 2026-09-23; `format:check`, the gate AGENTS.md
+  names, only reads. Rejected: the note alone, which the next forgetful
+  `format` defeats. The filename is now visible in the repository, which the
+  owner accepted; the contents are not.
+- **The textarea holds twice the character limit, and a counter says where
+  the real one is** (note 2). HTML's `maxLength` counts UTF-16 units while
+  the table and the schema count code points, so a 500-emoji notice, valid
+  to the server, was being cut at 250 with nothing said. A code point is at
+  most two units, so twice the limit can never cut a notice the server would
+  take, and the counter counts code points. Rejected: dropping the cap, which
+  lets someone type far past the limit before being told; and leaving it,
+  which is silent truncation.
+- **A refused caller keeps their draft** (note 3). The two refusal paths
+  disagreed: losing permission mid-edit emptied the editor, while a role
+  lowered after the check kept what was typed. Both now keep it.
+  Authorization still comes before any validation: a refused caller reaches
+  no schema, no rule and no query, and the echo is their own input, rendered
+  only as a control's value. Rejected: wiping on both paths, one rule at the
+  cost of a lost notice.
+- **The message limit moved to `disclosure-fields.ts`** (note 4). That
+  module exists so client components need not import the schemas, but the
+  editor reached `disclosure.ts` for the number, so Zod shipped to the
+  browser and the barrier was notional. `disclosure.ts` now takes the number
+  from there and re-exports it, so there is still one number. Rejected:
+  leaving it and correcting the comment, which keeps PR #29's failure mode:
+  a `server-only` import surfacing as a client build error in a file that
+  looks unrelated.
+- Out of contract, with the owner's standing permission:
+  `features/disclosures/disclosure.ts` (a forbidden file) now imports the
+  limit rather than declaring it, and `.prettierignore` gained one line.
+  Recorded here as the amendment that permission asks for.
+
 ## Invariants
 
 - Every page and action calls `requireDashboardSession` itself, then
@@ -133,6 +173,9 @@ Proposed by the implementer; these await the owner's sign-off.
 - Only the `message`, `language`, `enabled` and expected-version fields are
   read from the form; any other field, an organization, system, ID,
   version, author or time included, is ignored.
+- Authorization comes before validation. A caller without permission is
+  refused before any schema runs and before any query; only their own
+  submitted text is read back, to keep their draft.
 - Hiding a control is presentation. Every write is re-authorized in its
   action, again by the query layer, and again by RLS and the database's
   triggers.

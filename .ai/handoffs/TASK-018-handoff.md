@@ -16,8 +16,14 @@ the screen's. The editor carries the version it was loaded from, so a
 publish over someone else's newer text is refused rather than done quietly.
 
 There was no TASK-018 contract, so this task adds one. Four decisions are
-the owner's (Mikołaj Smoliniec, 2026-09-23); eleven are the implementer's
-and await sign-off.
+the owner's (Mikołaj Smoliniec, 2026-09-23). The implementer proposed
+eleven, all accepted on the PR #33 review. Accepted by Mikołaj Smoliniec
+(project owner), 2026-09-25.
+
+On the PR #33 review (owner, 2026-09-25): `CODEX-SECURITY.md` is in
+`.prettierignore` (note 1); the textarea holds twice the character limit and
+a counter says where the real one is (note 2); a refused caller keeps their
+draft (note 3); the message limit moved to `disclosure-fields.ts` (note 4).
 
 ### Decisions
 
@@ -67,9 +73,12 @@ No migration: this task adds none, and none was needed. TASK-017's
 
 ### Security considerations
 
-- The action authorizes before it reads the form. A viewer sending an
-  invalid body gets `not_permitted` and an empty editor, never `invalid`
-  and never their own text echoed back. A mocked test pins the order.
+- The action authorizes before anything is validated. A viewer sending an
+  invalid body gets `not_permitted`, never `invalid` and never a field
+  error: they reach no schema, no rule and no query. Their own text does
+  come back, to keep their draft (PR #33 review, note 3); it is the
+  sender's own input, rendered only as a control's value, which React
+  escapes. Two mocked tests pin the order.
 - Nothing bound into the action is trusted. Every query uses
   `access.organizationId`, and the system ID is parsed as a UUID before it
   reaches the database.
@@ -122,6 +131,27 @@ The database was reset to the migration head before the database suites, and
 again before the browser suite, whose shared sign-in had hit the local
 magic-link rate limit after three runs in a few minutes. The limit itself
 was not changed.
+
+### The PR #33 review, folded in
+
+- **note 1:** `.prettierignore` now names `CODEX-SECURITY.md`, so no
+  `prettier --write` can reach the owner's untracked review file again. It
+  is the only untracked, non-ignored file in the tree, which is why exactly
+  one file was touched on 2026-09-23.
+- **note 2:** the textarea's own limit is now twice the character limit,
+  because HTML counts UTF-16 units and the schema counts code points; a
+  counter under the field counts code points and says when a notice is too
+  long. Three unit tests pin the two numbers to the schema.
+- **note 3:** a caller refused for permission now gets their own text back,
+  as the other refusal path already did. Authorization still precedes
+  validation: the refusal reads three raw strings and runs no schema, no
+  rule and no query. The security test was rewritten to assert the new
+  behaviour, plus a second case where the notice is too long and still no
+  field is named.
+- **note 4:** `DISCLOSURE_MESSAGE_MAX_LENGTH` now lives in
+  `disclosure-fields.ts`, and `disclosure.ts` imports and re-exports it, so
+  the client path no longer reaches the schema module and there is still
+  one number.
 
 ### Remaining concerns
 

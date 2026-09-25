@@ -70,7 +70,6 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 import { publishDisclosureAction } from "@/app/(dashboard)/dashboard/[organizationId]/systems/[systemId]/disclosure/actions";
 import { AuthorizationError } from "@/lib/auth/errors";
-import { EMPTY_DISCLOSURE_FORM_VALUES } from "@/features/disclosures/disclosure-fields";
 import { runAction } from "@/tests/support/next-interrupts";
 
 const ORG = "0f6b2a4c-8d1e-4f3a-9b5c-6e7d8a9b0c1d";
@@ -102,17 +101,18 @@ beforeEach(() => {
 });
 
 describe("authorization happens before the form is read", () => {
-  it("a viewer submitting an invalid body gets not_permitted, with empty values, never invalid and never their typed text", async () => {
+  it("refuses a viewer as not_permitted, never as invalid, without reaching a rule or a query", async () => {
     calls.role = "viewer";
-    const typed = "text that must never come back";
+    const typed = "text a viewer typed before their role changed";
 
     const outcome = await runAction(() =>
       publishDisclosureAction(
         ORG,
         SYSTEM,
         null,
-        // Invalid: no language, and this message is fine, but it must never
-        // be echoed, because a viewer never reaches validation at all.
+        // Invalid: no language. A viewer must be refused for their role,
+        // not told which field is wrong, because they never reach
+        // validation at all.
         form({ message: typed, language: "", enabled: "on" }),
       ),
     );
@@ -122,18 +122,45 @@ describe("authorization happens before the form is read", () => {
       value: {
         result: "not_permitted",
         fields: [],
-        values: EMPTY_DISCLOSURE_FORM_VALUES,
+        // Their own draft comes back, so a role changed mid-edit costs
+        // nobody their notice (PR #33 review, note 3). It says nothing
+        // they did not just send.
+        values: { message: typed, language: "", enabled: true },
       },
     });
-    // Confirms the refusal really is "not_permitted", not "invalid".
+    // No field is named: validation never ran.
     if (outcome.kind === "returned") {
-      const state = outcome.value as { result: string; values: unknown };
+      const state = outcome.value as { result: string; fields: unknown[] };
       expect(state.result).not.toBe("invalid");
-      expect(JSON.stringify(state.values)).not.toContain(typed);
+      expect(state.fields).toEqual([]);
     }
     expect(calls.permissions).toEqual([
       { organizationId: ORG, permission: "disclosures.manage" },
     ]);
+    expect(calls.publishes).toEqual([]);
+  });
+
+  it("gives a refused caller no field errors even when the notice itself is too long", async () => {
+    calls.role = "viewer";
+    const tooLong = "x".repeat(600);
+
+    const outcome = await runAction(() =>
+      publishDisclosureAction(
+        ORG,
+        SYSTEM,
+        null,
+        form({ message: tooLong, language: "en", enabled: "on" }),
+      ),
+    );
+
+    expect(outcome).toEqual({
+      kind: "returned",
+      value: {
+        result: "not_permitted",
+        fields: [],
+        values: { message: tooLong, language: "en", enabled: true },
+      },
+    });
     expect(calls.publishes).toEqual([]);
   });
 
