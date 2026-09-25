@@ -6,6 +6,7 @@ import {
   hasLineOrParagraphSeparator,
 } from "@/lib/validation/text";
 
+import { DISCLOSURE_MESSAGE_MAX_LENGTH } from "./disclosure-fields";
 import { DISCLOSURE_LANGUAGES, type DisclosureLanguage } from "./languages";
 
 /**
@@ -14,8 +15,10 @@ import { DISCLOSURE_LANGUAGES, type DisclosureLanguage } from "./languages";
  * list), so a message this accepts is never refused there.
  */
 
-/** Characters, as the table counts them: code points, not UTF-16 units. */
-export const DISCLOSURE_MESSAGE_MAX_LENGTH = 500;
+// The limit itself is in `disclosure-fields.ts`, which the editor may
+// import; this module holds the rule that enforces it (PR #33 review,
+// note 4). Re-exported so TASK-017's callers keep their import.
+export { DISCLOSURE_MESSAGE_MAX_LENGTH };
 
 /**
  * One line of plain text (TASK-016, PR #31 review).

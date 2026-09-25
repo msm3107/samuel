@@ -29,6 +29,7 @@ import { createDeploymentAction } from "../../deployments/actions";
 import { deploymentPath } from "../../deployments/messages";
 import { setAiSystemStatusAction, updateAiSystemAction } from "../actions";
 import { systemsPath } from "../messages";
+import { disclosurePath } from "./disclosure/messages";
 
 const systemIdSchema = z.uuid();
 
@@ -120,6 +121,21 @@ export default async function AiSystemPage({
           )}
         </dd>
       </dl>
+
+      <section className="mt-12" aria-labelledby="disclosure-heading">
+        <h2 id="disclosure-heading" className="text-xl font-semibold">
+          Disclosure
+        </h2>
+        <p className="mt-4 text-slate-700">
+          <Link
+            href={disclosurePath(access.organizationId, aiSystem.id)}
+            className={TEXT_LINK}
+          >
+            The transparency notice
+          </Link>{" "}
+          this system shows, and every version published so far.
+        </p>
+      </section>
 
       <section className="mt-12" aria-labelledby="deployments-heading">
         <h2 id="deployments-heading" className="text-xl font-semibold">

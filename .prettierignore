@@ -4,3 +4,6 @@ pnpm-lock.yaml
 coverage
 next-env.d.ts
 supabase/.temp
+
+# The owner's own review notes, untracked and never ours to rewrite
+CODEX-SECURITY.md
