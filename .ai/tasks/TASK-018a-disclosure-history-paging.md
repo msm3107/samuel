@@ -84,7 +84,8 @@ Chosen by Mikołaj Smoliniec (project owner), 2026-09-25:
 
 ## Proposed by the implementer
 
-Each awaits the owner's sign-off.
+All ten accepted on the PR #34 review. Accepted by Mikołaj Smoliniec
+(project owner), 2026-09-25.
 
 1. **The cursor is a version number, not an offset or a time.** `version`
    is unique per AI system, assigned by TASK-016's trigger, never reused
@@ -194,3 +195,41 @@ Each awaits the owner's sign-off.
   version exactly once and in order.
 - Browser: publish three versions, follow a cursor link built by hand to
   an older page, see no editor, and follow the link back to the newest.
+
+## Amendment: the PR #34 review
+
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-25. Three
+non-blocking notes; none changed the code.
+
+- **Note 1, the count.** The review found "eleven proposals" in the pull
+  request's description and in the implementer's report, where this
+  contract has ten. Ten is right: eleven was TASK-018's count, carried over
+  by mistake. Nothing was dropped and no eleventh was ever written. The
+  pull request's description was corrected, and the sign-off above names
+  ten.
+- **Note 2, a cursor above the newest version.** `?before=999999` on a
+  three-version system returns all three, so the page renders as an older
+  page: no "Current" badge, no editor, and the sentence "The current
+  version is on the newest page" while it is in fact the first row on
+  screen. **Left as it is, deliberately.** Knowing that a cursor is above
+  everything means knowing the system's newest version, which is a second
+  query — exactly what decision 1 took off this page. Nothing false is
+  said about any row: every version shown is real, in order, with its own
+  language, state, time and publisher. The screen's own links can never
+  produce such a cursor; only a hand-typed address or a link from
+  elsewhere can. Rejected: having the query also return the newest
+  version, which would put the editor's presence back inside a query's
+  result, the arrangement decision 1 rejected.
+- **Note 3, the paging protocol is not documented for external callers.**
+  `truncated: true` with no cursor means a client must know the rule "ask
+  again with the last row's version". Proposal 5 stands — a `nextBefore`
+  would be the last row's version written twice — but an external caller
+  has nowhere to read the rule today. **Owed** to whichever task first
+  documents the customer-facing API; not a change here.
+
+### Out of contract
+
+- `.ai/PLAN.md`: Phase 5's heading now carries the "**complete**" marker,
+  as Phase 0's does. The plan is not in this task's Allowed files; the
+  owner asked for it on this branch (2026-09-25) under their standing
+  permission to edit outside the list, and it is recorded here.

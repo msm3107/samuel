@@ -35,7 +35,7 @@ Owner, 2026-09-25:
    moving toward newer is the browser's Back button. One cursor, nothing to
    get out of step. Rejected: an `after` parameter as well.
 
-Implementer (proposed, awaiting sign-off): the cursor is a version number,
+Implementer (proposed): the cursor is a version number,
 not an offset or a time; it is exclusive; it is validated as text and then
 as a Postgres `integer`; an unreadable one is ignored by the screen and
 refused by the API; `truncated` keeps its meaning and no cursor is
@@ -43,7 +43,15 @@ serialized; the "Current" badge and the widget notes appear only on the
 newest page; an empty older page says so; the truncation note carries the
 link; no new query and no new index; the paged view is one server render,
 not a client-side "load more". The contract states each one's reason and
-what was rejected.
+what was rejected. All ten accepted on the PR #34 review. Accepted by
+Mikołaj Smoliniec (project owner), 2026-09-25.
+
+On the PR #34 review (owner, 2026-09-25): the count is ten, not eleven —
+eleven was TASK-018's, carried over into the pull request's description by
+mistake and corrected there (note 1); a cursor above the newest version is
+left as it is, with its reason written into the contract (note 2); the
+endpoint's paging rule is owed to whichever task documents the
+customer-facing API (note 3). Phase 5 is marked complete in `.ai/PLAN.md`.
 
 ### Files changed
 
@@ -131,6 +139,32 @@ again before the browser suite.
 is in `.prettierignore` since TASK-018, and its sha256 was checked before and
 after: unchanged.
 
+### The PR #34 review
+
+Approved with three non-blocking notes, none of which changed the code.
+
+- **note 1:** the pull request's description and the implementer's report
+  said "eleven proposals" where the contract has ten. Ten is right; eleven
+  was TASK-018's count. The description was corrected and the sign-off
+  names ten.
+- **note 2:** `?before=` above the newest version renders the current
+  version as an older page — no badge, no editor. Left as it is: knowing a
+  cursor is above everything means a second query for the newest version,
+  which is what the owner's first decision took off this page. Nothing
+  false is said about any row, and the screen's own links cannot produce
+  such a cursor.
+- **note 3:** `truncated: true` with no cursor means an external caller
+  must know the rule "ask again with the last row's version", and there is
+  nowhere to read it. Proposal 5 stands; the line is owed to whichever task
+  documents the customer-facing API.
+
+The review also confirmed what mattered most: the cursor reaches the query
+as one exclusive bound and nothing else; a filter on the embedded versions
+does not drop the parent row, so a cursor cannot turn a real system into a
+404; cross-tenant answers are unchanged with a cursor present;
+authorization comes before the cursor is parsed; and `.prettierignore` did
+its job — `pnpm format` left `CODEX-SECURITY.md` alone.
+
 ### Remaining concerns
 
 - **A page is still 200 versions.** A system with thousands of versions is
@@ -140,6 +174,12 @@ after: unchanged.
 - **No way toward newer within the page.** By the owner's decision, that is
   the browser's Back button. A reader who opens an `?before=` link fresh, in
   a new tab, can only go older or back to the newest.
+- **The endpoint's paging rule is undocumented** for external callers (PR
+  #34 review, note 3): `truncated: true` carries no cursor, so a client must
+  know to ask again with the last row's version.
+- **A cursor above the newest version** renders the current version as an
+  older page (PR #34 review, note 2). Deliberate, and the contract's
+  amendment says why.
 - **A member directory is still owed** if the publisher is ever to be named
   (TASK-018).
 - **Owed from earlier tasks, unchanged:** TASK-019 must check
