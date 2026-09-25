@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import { publishDisclosureSchema } from "@/features/disclosures/disclosure";
+import {
+  disclosureCursorSchema,
+  publishDisclosureSchema,
+} from "@/features/disclosures/disclosure";
 import {
   listDisclosures,
   publishDisclosure,
@@ -39,8 +42,13 @@ function notFound() {
 /**
  * An AI system's disclosure versions, newest first: the first is the one
  * its widget shows (TASK-016: one history per system).
+ *
+ * `before` reads an older page (TASK-018a), exclusive, so passing the last
+ * version of a page gives the next one. Absent means the newest. A `before`
+ * that is not a version number is refused here rather than ignored: a
+ * client asked for something exact and is told it could not be given.
  */
-export async function GET(_request: Request, { params }: RouteContext) {
+export async function GET(request: Request, { params }: RouteContext) {
   return handleApiRequest(
     "GET /api/organizations/[id]/ai-systems/[id]/disclosures",
     async () => {
@@ -49,13 +57,35 @@ export async function GET(_request: Request, { params }: RouteContext) {
         organizationId,
         permission: "organization.read",
       });
-      const history = await listDisclosures(access, parseSystemId(systemId));
+      const before = parseCursor(new URL(request.url).searchParams);
+      const history = await listDisclosures(access, parseSystemId(systemId), {
+        before,
+      });
       if (history === null) {
         throw notFound();
       }
       return jsonResponse(history);
     },
   );
+}
+
+/**
+ * The `before` cursor, or none. A repeated parameter is ambiguous and
+ * refused, as on the deployments list.
+ */
+function parseCursor(searchParams: URLSearchParams): number | undefined {
+  const values = searchParams.getAll("before");
+  if (values.length === 0) {
+    return undefined;
+  }
+  if (values.length > 1) {
+    throw new ApiRequestError(400, "invalid_request");
+  }
+  const parsed = disclosureCursorSchema.safeParse(values[0]);
+  if (!parsed.success) {
+    throw new ApiRequestError(400, "invalid_request");
+  }
+  return parsed.data;
 }
 
 /**

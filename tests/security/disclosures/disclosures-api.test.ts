@@ -20,6 +20,10 @@ const state = vi.hoisted(() => ({
   signedIn: true,
   role: "member" as string | null,
   rpcCalls: [] as Array<{ name: string; params: unknown }>,
+  /** Every table the route reached, in order (TASK-018a). */
+  tables: [] as string[],
+  /** Every `lt` the history query applied: the cursor, if any. */
+  cursors: [] as Array<{ column: string; value: unknown }>,
 }));
 
 vi.mock("@/lib/auth/require-session", async () => {
@@ -34,36 +38,70 @@ vi.mock("@/lib/auth/require-session", async () => {
   };
 });
 
-vi.mock("@/lib/database/session-client", () => ({
-  createResolvingSessionClient: async () => ({
-    supabase: {
-      from: (_table: string) => ({
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({
-                data: state.role === null ? null : { role: state.role },
-                error: null,
+vi.mock("@/lib/database/session-client", () => {
+  /** Enough of the query builder for the history read (TASK-018a). */
+  type Chain = {
+    select: () => Chain;
+    eq: () => Chain;
+    order: () => Chain;
+    limit: () => Chain;
+    lt: (column: string, value: unknown) => Chain;
+    maybeSingle: () => Promise<{ data: unknown; error: null }>;
+  };
+  const history: Chain = {
+    select: () => history,
+    eq: () => history,
+    order: () => history,
+    limit: () => history,
+    lt: (column, value) => {
+      state.cursors.push({ column, value });
+      return history;
+    },
+    maybeSingle: async () => ({
+      data: { status: "active", disclosures: [] },
+      error: null,
+    }),
+  };
+  return {
+    createResolvingSessionClient: async () => ({
+      supabase: {
+        from: (table: string) => {
+          state.tables.push(table);
+          if (table === "ai_systems") {
+            return history;
+          }
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({
+                    data: state.role === null ? null : { role: state.role },
+                    error: null,
+                  }),
+                }),
               }),
             }),
-          }),
-        }),
-      }),
-      rpc: async (name: string, params: unknown) => {
-        state.rpcCalls.push({ name, params });
-        // None of the tests here are meant to reach the RPC; a benign
-        // refusal keeps a bug from silently succeeding instead of failing
-        // the assertion on state.rpcCalls.
-        return { data: null, error: { code: "23503" } };
+          };
+        },
+        rpc: async (name: string, params: unknown) => {
+          state.rpcCalls.push({ name, params });
+          // None of the tests here are meant to reach the RPC; a benign
+          // refusal keeps a bug from silently succeeding instead of failing
+          // the assertion on state.rpcCalls.
+          return { data: null, error: { code: "23503" } };
+        },
       },
-    },
-    applyHeldRemovals: () => {},
-  }),
-}));
+      applyHeldRemovals: () => {},
+    }),
+  };
+});
 
 import { MAX_JSON_BODY_BYTES } from "@/lib/http/api";
 
-import { POST as createDisclosure } from "@/app/api/organizations/[organizationId]/ai-systems/[systemId]/disclosures/route";
+import {
+  GET as listDisclosures,
+  POST as createDisclosure,
+} from "@/app/api/organizations/[organizationId]/ai-systems/[systemId]/disclosures/route";
 import {
   apiRequest,
   readError,
@@ -87,10 +125,22 @@ function create(options: Parameters<typeof apiRequest>[2] = {}) {
   );
 }
 
+function history(query = "") {
+  return listDisclosures(
+    apiRequest(
+      "GET",
+      `/api/organizations/${ORG}/ai-systems/${SYSTEM}/disclosures${query}`,
+    ),
+    { params: Promise.resolve({ organizationId: ORG, systemId: SYSTEM }) },
+  );
+}
+
 afterEach(() => {
   state.signedIn = true;
   state.role = "member";
   state.rpcCalls = [];
+  state.tables = [];
+  state.cursors = [];
 });
 
 describe("cross-origin requests", () => {
@@ -181,5 +231,63 @@ describe("error bodies", () => {
     expect(Object.keys(body)).toEqual(["error"]);
     const error = body.error as Record<string, unknown>;
     expect(Object.keys(error).sort()).toEqual(["code", "reference"]);
+  });
+});
+
+/**
+ * The history cursor (TASK-018a). It is one integer narrowing rows the
+ * caller can already read, so it can reveal nothing; what matters is that
+ * nothing outside Postgres's `integer` ever reaches a query, and that a
+ * client asking for an exact page is told when it could not be given.
+ */
+describe("the history cursor", () => {
+  it("a valid cursor reaches the query as an exclusive bound on version", async () => {
+    const response = await history("?before=201");
+
+    expect(response.status).toBe(200);
+    expect(state.cursors).toEqual([
+      { column: "disclosures.version", value: 201 },
+    ]);
+  });
+
+  it("no cursor applies no bound at all", async () => {
+    const response = await history();
+
+    expect(response.status).toBe(200);
+    expect(state.cursors).toEqual([]);
+  });
+
+  it.each([
+    ["a word", "?before=nine"],
+    ["zero", "?before=0"],
+    ["a negative number", "?before=-1"],
+    ["a decimal", "?before=2.5"],
+    ["above Postgres's integer", "?before=2147483648"],
+    ["an empty value", "?before="],
+    ["the same parameter twice", "?before=3&before=4"],
+  ])("refuses %s with 400 and never queries", async (_label, query) => {
+    const response = await history(query);
+
+    expect(response.status).toBe(400);
+    expect((await readError(response)).code).toBe("invalid_request");
+    expect(state.cursors).toEqual([]);
+    expect(state.tables).not.toContain("ai_systems");
+  });
+
+  it("a viewer may read a page: the cursor needs no more than read", async () => {
+    state.role = "viewer";
+
+    const response = await history("?before=5");
+
+    expect(response.status).toBe(200);
+  });
+
+  it("someone with no role in the organization is refused before the cursor", async () => {
+    state.role = null;
+
+    const response = await history("?before=not-a-number");
+
+    expect(response.status).toBe(403);
+    expect(state.cursors).toEqual([]);
   });
 });

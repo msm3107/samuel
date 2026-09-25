@@ -49,6 +49,19 @@ export const disclosureMessageSchema = z
 const MAX_VERSION = 2_147_483_647;
 
 /**
+ * Where a page of the history starts: versions below this one (TASK-018a).
+ * A cursor arrives as text, from a query parameter, so it is read as text
+ * first and only then as a version number; nothing outside Postgres's
+ * `integer` reaches a query. `1` is allowed and names an empty page, which
+ * is the true answer for "older than the first version".
+ */
+export const disclosureCursorSchema = z
+  .string()
+  .regex(/^[0-9]{1,10}$/)
+  .transform(Number)
+  .pipe(z.int().min(1).max(MAX_VERSION));
+
+/**
  * A new version. Strict: the organization and AI system come from the
  * route, and the ID, version, author and time are the database's, so a
  * body naming any of them is refused rather than trimmed.

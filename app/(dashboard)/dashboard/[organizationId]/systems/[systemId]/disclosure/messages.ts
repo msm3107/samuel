@@ -11,11 +11,20 @@ import {
  * a message.
  */
 
+/**
+ * The screen, or one of its older pages (TASK-018a). `before` is a version
+ * number the caller read from a row, so it needs no escaping; it is written
+ * through `URLSearchParams` anyway, so it can only ever be one parameter.
+ */
 export function disclosurePath(
   organizationId: string,
   systemId: string,
+  before?: number,
 ): string {
-  return `/dashboard/${organizationId}/systems/${systemId}/disclosure`;
+  const path = `/dashboard/${organizationId}/systems/${systemId}/disclosure`;
+  return before === undefined
+    ? path
+    : `${path}?${new URLSearchParams({ before: String(before) })}`;
 }
 
 /** Why a field was refused, next to the field. */
