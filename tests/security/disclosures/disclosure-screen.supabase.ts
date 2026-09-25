@@ -31,6 +31,7 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { publishDisclosureAction } from "@/app/(dashboard)/dashboard/[organizationId]/systems/[systemId]/disclosure/actions";
+import DisclosurePage from "@/app/(dashboard)/dashboard/[organizationId]/systems/[systemId]/disclosure/page";
 import { createAiSystemAction } from "@/app/(dashboard)/dashboard/[organizationId]/systems/actions";
 import {
   ENABLED_FIELD,
@@ -43,7 +44,7 @@ import {
   type TestOrganization,
   type TestUser,
 } from "@/tests/security/tenant-isolation/support/tenants";
-import { runAction } from "@/tests/support/next-interrupts";
+import { renderPage, runAction } from "@/tests/support/next-interrupts";
 
 const fixtures = createTenantFixtures();
 
@@ -317,5 +318,72 @@ describe("error states never carry database internals", () => {
       disclosureForm(message("Refused")),
     );
     assertNoLeak(outcome.kind === "returned" ? outcome.value : outcome);
+  });
+});
+
+/**
+ * The history cursor (TASK-018a). It narrows rows the caller can already
+ * read, so it must not widen anything: a system in another organization is
+ * the same "not found" with a cursor as without one, whatever that system
+ * has published and whatever page the cursor names.
+ */
+describe("the history cursor and another organization's system", () => {
+  async function pageAs(
+    user: TestUser,
+    client: SupabaseClient,
+    organizationId: string,
+    systemId: string,
+    searchParams: Record<string, string | string[] | undefined>,
+  ) {
+    actAs(user, client);
+    return renderPage(() =>
+      DisclosurePage({
+        params: Promise.resolve({ organizationId, systemId }),
+        searchParams: Promise.resolve(searchParams),
+      }),
+    );
+  }
+
+  it("is not found under A's own organization, cursor or no cursor", async () => {
+    for (const systemId of [systemBWithHistory, systemBWithoutHistory]) {
+      for (const searchParams of [{}, { before: "1" }, { before: "2" }]) {
+        const outcome = await pageAs(
+          userA,
+          clientA,
+          orgA.id,
+          systemId,
+          searchParams,
+        );
+
+        expect(outcome).toEqual({ kind: "not_found" });
+      }
+    }
+  });
+
+  it("is not found under B's own organization, cursor or no cursor", async () => {
+    for (const searchParams of [{}, { before: "2" }]) {
+      const outcome = await pageAs(
+        userA,
+        clientA,
+        orgB.id,
+        systemBWithHistory,
+        searchParams,
+      );
+
+      expect(outcome).toEqual({ kind: "not_found" });
+    }
+  });
+
+  it("shows a viewer of A their own system's pages, with no editor", async () => {
+    const outcome = await pageAs(viewerOfA, viewerClient, orgA.id, systemA, {
+      before: "2",
+    });
+
+    expect(outcome.kind).toBe("rendered");
+    if (outcome.kind !== "rendered") {
+      return;
+    }
+    expect(outcome.html).not.toContain("<textarea");
+    expect(outcome.html).toContain("Back to the newest versions");
   });
 });

@@ -33,9 +33,21 @@ export const DISCLOSURE_LIST_LIMIT = 200;
 
 export type DisclosureHistory = Readonly<{
   aiSystemStatus: (typeof SYSTEM_STATUSES)[number];
-  /** Newest first: the first is the current version. */
+  /** Newest first: the first is the current version, unless `before`. */
   disclosures: SerializedDisclosure[];
+  /** More versions remain below the last one returned. */
   truncated: boolean;
+}>;
+
+/**
+ * Which page of the history to read (TASK-018a). `before` is exclusive, so
+ * a caller passes the last version it was given and the next page starts
+ * one below it, with nothing repeated and nothing skipped. The caller
+ * builds its own next cursor from the last row, so nothing is returned
+ * that the rows do not already say.
+ */
+export type DisclosureHistoryPage = Readonly<{
+  before?: number | undefined;
 }>;
 
 type Published = { status: "ok"; disclosure: SerializedDisclosure };
@@ -103,15 +115,23 @@ const historyRowSchema = z.object({
  * no such system. One query: the system, with its versions through the
  * composite foreign key, so an unknown system and a system with no versions
  * are told apart without a second lookup.
+ *
+ * `page.before` reads an older page (TASK-018a): one more predicate on the
+ * same query, over `(ai_system_id, version)`, which TASK-016 already made
+ * unique. A version is never reused or changed, so a publish while someone
+ * is paging cannot shift a page under them. The cursor names no
+ * organization and no system; RLS refuses every row that is not the
+ * caller's, cursor or no cursor.
  */
 export async function listDisclosures(
   access: OrganizationAccess,
   aiSystemId: string,
+  page: DisclosureHistoryPage = {},
 ): Promise<DisclosureHistory | null> {
   assertAccessAllows(access, "organization.read");
   const { supabase } = await createResolvingSessionClient();
   // One more than the limit, to know whether there were more.
-  const { data, error } = await supabase
+  const query = supabase
     .from("ai_systems")
     .select(
       `status, disclosures!disclosures_ai_system_fkey(${DISCLOSURE_COLUMNS})`,
@@ -119,8 +139,14 @@ export async function listDisclosures(
     .eq("organization_id", access.organizationId)
     .eq("id", aiSystemId)
     .order("version", { referencedTable: "disclosures", ascending: false })
-    .limit(DISCLOSURE_LIST_LIMIT + 1, { referencedTable: "disclosures" })
-    .maybeSingle();
+    .limit(DISCLOSURE_LIST_LIMIT + 1, { referencedTable: "disclosures" });
+  // Filters the embedded versions, not the system: a system with no version
+  // below the cursor is still found, with an empty page.
+  const { data, error } = await (
+    page.before === undefined
+      ? query
+      : query.lt("disclosures.version", page.before)
+  ).maybeSingle();
   if (error) {
     throw new DisclosureQueryError(error.code, { cause: error });
   }

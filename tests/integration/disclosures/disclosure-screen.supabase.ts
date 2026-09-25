@@ -130,10 +130,14 @@ async function published(
   return (outcome.value as { version: number }).version;
 }
 
-async function disclosurePageHtml(systemId: string) {
+async function disclosurePageHtml(
+  systemId: string,
+  searchParams: Record<string, string | string[] | undefined> = {},
+) {
   const outcome = await renderPage(() =>
     DisclosurePage({
       params: Promise.resolve({ organizationId: org.id, systemId }),
+      searchParams: Promise.resolve(searchParams),
     }),
   );
   if (outcome.kind !== "rendered") {
@@ -272,5 +276,96 @@ describe("a member, publishing from the dashboard", () => {
     // second entry's heading.
     expect(positionOf("Version 3")).toBeLessThan(positionOf("Current"));
     expect(positionOf("Current")).toBeLessThan(positionOf("Version 2"));
+  });
+});
+
+describe("the history a page at a time (TASK-018a)", () => {
+  /** Publishes `count` versions and returns their numbers, oldest first. */
+  async function publishVersions(
+    systemId: string,
+    count: number,
+  ): Promise<number[]> {
+    const versions: number[] = [];
+    for (let n = 1; n <= count; n += 1) {
+      const expectedVersion = versions.at(-1);
+      versions.push(
+        await published(systemId, {
+          message: message(`V${n}`),
+          ...(expectedVersion === undefined ? {} : { expectedVersion }),
+        }),
+      );
+    }
+    return versions;
+  }
+
+  it("an older page shows the versions below the cursor and no editor", async () => {
+    const systemId = await registerSystem();
+    expect(await publishVersions(systemId, 3)).toEqual([1, 2, 3]);
+
+    const html = await disclosurePageHtml(systemId, { before: "3" });
+
+    expect(html).toContain("Older versions");
+    expect(html).toContain("Version 2");
+    expect(html).toContain("Version 1");
+    expect(html).not.toContain("Version 3");
+    // No editor, so nothing on this page can publish against a version
+    // that is not the current one.
+    expect(html).not.toContain("<textarea");
+    expect(html).not.toContain("Show this notice on the website");
+    expect(html).toContain("Back to the newest versions");
+  });
+
+  it("the newest page keeps its editor and its Current marker", async () => {
+    const systemId = await registerSystem();
+    await publishVersions(systemId, 2);
+
+    const html = await disclosurePageHtml(systemId);
+
+    expect(html).toContain("<textarea");
+    expect(html).toContain("Current");
+    expect(html).not.toContain("Back to the newest versions");
+  });
+
+  it("an older page marks nothing as current", async () => {
+    const systemId = await registerSystem();
+    await publishVersions(systemId, 3);
+
+    const html = await disclosurePageHtml(systemId, { before: "3" });
+
+    expect(html).not.toContain("Current");
+  });
+
+  it("a cursor below the first version says there is nothing older", async () => {
+    const systemId = await registerSystem();
+    await publishVersions(systemId, 2);
+
+    const html = await disclosurePageHtml(systemId, { before: "1" });
+
+    expect(html).toContain("There are no versions older than version 1.");
+    expect(html).toContain("Back to the newest versions");
+    expect(html).not.toContain("Nothing published yet");
+  });
+
+  it("a cursor that isn't a version number shows the newest versions", async () => {
+    const systemId = await registerSystem();
+    await publishVersions(systemId, 2);
+
+    for (const before of ["nine", "-1", "0", "2.5", "9999999999999", ""]) {
+      const html = await disclosurePageHtml(systemId, { before });
+
+      expect(html).toContain("Version 2");
+      expect(html).toContain("Current");
+      expect(html).not.toContain("Back to the newest versions");
+    }
+  });
+
+  it("a repeated cursor is ambiguous, so the newest versions are shown", async () => {
+    const systemId = await registerSystem();
+    await publishVersions(systemId, 2);
+
+    const html = await disclosurePageHtml(systemId, { before: ["2", "1"] });
+
+    expect(html).toContain("Version 2");
+    expect(html).toContain("Current");
   });
 });

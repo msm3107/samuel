@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { publishDisclosureSchema } from "@/features/disclosures/disclosure";
+import {
+  disclosureCursorSchema,
+  publishDisclosureSchema,
+} from "@/features/disclosures/disclosure";
 import { serializeDisclosure } from "@/features/disclosures/disclosure-queries";
 import { DISCLOSURE_LANGUAGES } from "@/features/disclosures/languages";
 
@@ -324,5 +327,37 @@ describe("serializeDisclosure", () => {
     ["a non-string message", { ...ROW, message: 123 }],
   ])("rejects %s", (_label, row) => {
     expect(() => serializeDisclosure(row)).toThrow();
+  });
+});
+
+/**
+ * The history cursor (TASK-018a). It arrives as a query parameter, so it is
+ * read as text first; nothing outside Postgres's `integer` reaches a query.
+ */
+describe("disclosureCursorSchema", () => {
+  it.each([
+    ["the first version", "1", 1],
+    ["a page boundary", "200", 200],
+    ["the largest integer Postgres holds", "2147483647", 2147483647],
+    ["leading zeros, which name the same version", "007", 7],
+  ])("accepts %s", (_label, input, expected) => {
+    expect(disclosureCursorSchema.parse(input)).toBe(expected);
+  });
+
+  it.each([
+    ["nothing", ""],
+    ["a word", "nine"],
+    ["zero, which is below the first version", "0"],
+    ["a negative number", "-1"],
+    ["a decimal", "2.5"],
+    ["one above Postgres's integer", "2147483648"],
+    ["eleven digits", "99999999999"],
+    ["a number with a space", " 2"],
+    ["scientific notation", "1e3"],
+    ["a repeated parameter, as an array", ["2", "1"]],
+    ["a number rather than text", 2],
+    ["nothing at all", undefined],
+  ])("refuses %s", (_label, input) => {
+    expect(disclosureCursorSchema.safeParse(input).success).toBe(false);
   });
 });

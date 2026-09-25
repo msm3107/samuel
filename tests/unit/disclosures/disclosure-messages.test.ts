@@ -85,3 +85,20 @@ describe("disclosurePath", () => {
     );
   });
 });
+
+describe("disclosurePath with a cursor (TASK-018a)", () => {
+  const organizationId = "0f6b2a4c-8d1e-4f3a-9b5c-6e7d8a9b0c1d";
+  const systemId = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d";
+
+  it("adds before as the only query parameter", () => {
+    expect(disclosurePath(organizationId, systemId, 201)).toBe(
+      `/dashboard/${organizationId}/systems/${systemId}/disclosure?before=201`,
+    );
+  });
+
+  it("leaves the path alone when there is no cursor", () => {
+    expect(disclosurePath(organizationId, systemId, undefined)).toBe(
+      disclosurePath(organizationId, systemId),
+    );
+  });
+});

@@ -1,10 +1,15 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 
 import { Breadcrumbs } from "@/components/dashboard/breadcrumbs";
 import { DisclosureForm } from "@/components/dashboard/disclosure-form";
+import { TEXT_LINK } from "@/components/ui/styles";
 import { readAiSystem } from "@/features/ai-systems/ai-system-queries";
-import type { SerializedDisclosure } from "@/features/disclosures/disclosure";
+import {
+  disclosureCursorSchema,
+  type SerializedDisclosure,
+} from "@/features/disclosures/disclosure";
 import {
   EMPTY_DISCLOSURE_FORM_VALUES,
   languageLabel,
@@ -22,6 +27,7 @@ import {
 } from "../../../access";
 import { systemPath, systemsPath } from "../../messages";
 import { publishDisclosureAction } from "./actions";
+import { disclosurePath } from "./messages";
 
 const systemIdSchema = z.uuid();
 
@@ -41,11 +47,18 @@ const PUBLISHED_AT = new Intl.DateTimeFormat("en-GB", {
  * Every published version is permanent evidence, so the history shows each
  * one with its full text, newest first (owner, 2026-09-23). The first row is
  * the current version: the widget shows that one, if it is turned on.
+ *
+ * `?before=N` reads an older page (TASK-018a). On such a page the first row
+ * is not the current version, so the editor is not rendered at all: a
+ * publish against a stale version is impossible by the page's shape rather
+ * than by the editor knowing which page it is on (owner, 2026-09-25).
  */
 export default async function DisclosurePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ organizationId: string; systemId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { organizationId, systemId } = await params;
   const access = await organizationAccessOrNotFound(
@@ -56,10 +69,11 @@ export default async function DisclosurePage({
   if (!id.success) {
     notFound();
   }
+  const before = historyCursor((await searchParams).before);
   const [organization, aiSystem, history] = await Promise.all([
     organizationOrNotFound(access),
     readAiSystem(access, id.data),
-    listDisclosures(access, id.data),
+    listDisclosures(access, id.data, { before }),
   ]);
   if (aiSystem === null || history === null) {
     notFound();
@@ -70,7 +84,11 @@ export default async function DisclosurePage({
     minimumRoleFor("disclosures.manage"),
   );
   const archived = history.aiSystemStatus === "archived";
-  const current = history.disclosures[0];
+  const paged = before !== undefined;
+  // Only the newest page knows what the current version is.
+  const current = paged ? undefined : history.disclosures[0];
+  const oldest = history.disclosures.at(-1);
+  const newestPath = disclosurePath(access.organizationId, aiSystem.id);
 
   return (
     <main id="main" className="mx-auto max-w-2xl px-6 py-12">
@@ -91,7 +109,7 @@ export default async function DisclosurePage({
         The transparency notice shown where <bdi>{aiSystem.name}</bdi> is used.
       </p>
 
-      {canManage ? (
+      {canManage && !paged ? (
         <section className="mt-10" aria-labelledby="editor-heading">
           <h2 id="editor-heading" className="text-xl font-semibold">
             {current === undefined
@@ -129,16 +147,23 @@ export default async function DisclosurePage({
 
       <section className="mt-12" aria-labelledby="history-heading">
         <h2 id="history-heading" className="text-xl font-semibold">
-          Published versions
+          {paged ? "Older versions" : "Published versions"}
         </h2>
-        {current === undefined ? (
+        {paged ? (
+          <p className="mt-2 text-sm text-slate-700">
+            Versions published before version {before}. The current version is
+            on the newest page.
+          </p>
+        ) : null}
+        {oldest === undefined ? (
           <p className="mt-4 text-slate-700">
-            Nothing published yet. Until a notice is published and turned on,
-            the widget shows nothing for this system.
+            {paged
+              ? `There are no versions older than version ${before}.`
+              : "Nothing published yet. Until a notice is published and turned on, the widget shows nothing for this system."}
           </p>
         ) : (
           <>
-            {archived ? (
+            {current === undefined ? null : archived ? (
               <p role="note" className="mt-4 text-sm text-slate-700">
                 This system is archived, so the widget shows nothing for it,
                 whatever its notice says.
@@ -154,21 +179,57 @@ export default async function DisclosurePage({
                 <Version
                   key={disclosure.id}
                   disclosure={disclosure}
-                  current={index === 0}
+                  current={!paged && index === 0}
                   byYou={disclosure.createdBy === access.userId}
                 />
               ))}
             </ol>
             {history.truncated ? (
-              <p role="note" className="mt-6 text-sm text-slate-700">
-                Showing the {DISCLOSURE_LIST_LIMIT} newest versions.
+              // The count and the way to the rest in one sentence, so a
+              // reader knows the list is cut before reaching its foot.
+              <p className="mt-6 text-sm text-slate-700">
+                Showing {paged ? "" : "the "}
+                {DISCLOSURE_LIST_LIMIT}
+                {paged ? " versions" : " newest versions"}.{" "}
+                <Link
+                  href={disclosurePath(
+                    access.organizationId,
+                    aiSystem.id,
+                    oldest.version,
+                  )}
+                  className={TEXT_LINK}
+                >
+                  Older versions
+                </Link>
               </p>
             ) : null}
           </>
         )}
+        {paged ? (
+          <p className="mt-6 text-sm">
+            <Link href={newestPath} className={TEXT_LINK}>
+              Back to the newest versions
+            </Link>
+          </p>
+        ) : null}
       </section>
     </main>
   );
+}
+
+/**
+ * Where an older page starts, or nowhere (TASK-018a). A cursor that cannot
+ * be read — typed, stale, or given twice — shows the newest versions rather
+ * than a 404, as the AI systems list does with an unknown status: the
+ * screen's own links are always well formed, so an unreadable one came from
+ * somewhere else and the page is still the right answer. The API refuses the
+ * same value, because a client asked for something exact.
+ */
+function historyCursor(
+  value: string | string[] | undefined,
+): number | undefined {
+  const parsed = disclosureCursorSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 /**

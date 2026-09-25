@@ -188,7 +188,7 @@ code.
 
 ---
 
-## Phase 5 — Disclosures
+## Phase 5 — Disclosures — **complete**
 
 **Goal.** An organization can configure the disclosure text a deployment shows.
 

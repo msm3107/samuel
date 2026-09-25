@@ -214,3 +214,66 @@ test("reaches the disclosure screen, publishes, edits and turns the notice off, 
   await expect(history.getByText(firstText)).toHaveCount(1);
   await expect(history).toContainText("Not shown");
 });
+
+/**
+ * An older page of the history (TASK-018a). Three versions is fewer than a
+ * page, so the screen itself offers no "Older versions" link; the cursor is
+ * written by hand, as a stale link or an edited address would be, and the
+ * page must still be right: the versions below it, no editor, and the way
+ * back.
+ */
+test("an older page of the history shows no editor, and links back", async () => {
+  const main = page.getByRole("main");
+
+  await page.goto(`${systemUrl}/disclosure`);
+  await expect(
+    main.getByRole("heading", { name: "Published versions" }),
+  ).toBeVisible();
+  // Fewer than a page, so nothing is cut and no link to older is offered.
+  await expect(main.getByRole("link", { name: "Older versions" })).toHaveCount(
+    0,
+  );
+
+  await page.goto(`${systemUrl}/disclosure?before=3`);
+
+  const history = main.getByRole("heading", { name: "Older versions" });
+  await expect(history).toBeVisible();
+  await expect(main).toContainText("Versions published before version 3.");
+  // Exact, because Playwright's substring matching is case-insensitive and
+  // the paragraph above says "before version 3".
+  await expect(main.getByText("Version 2", { exact: true })).toBeVisible();
+  await expect(main.getByText("Version 1", { exact: true })).toBeVisible();
+  await expect(main.getByText("Version 3", { exact: true })).toHaveCount(0);
+  // No editor at all on an older page: nothing here can publish.
+  await expect(main.getByRole("textbox")).toHaveCount(0);
+  await expect(main.getByRole("button", { name: "Publish" })).toHaveCount(0);
+  await expect(main.getByText("Current", { exact: true })).toHaveCount(0);
+
+  // The way back, by keyboard, as every other control on this screen.
+  const back = main.getByRole("link", { name: "Back to the newest versions" });
+  await fromTheTop();
+  await tabTo(back);
+  await page.keyboard.press("Enter");
+
+  await expect(page).toHaveURL(/\/disclosure$/);
+  await expect(
+    main.getByRole("heading", { name: "Published versions" }),
+  ).toBeVisible();
+  await expect(main.getByText("Current", { exact: true })).toBeVisible();
+});
+
+/** A cursor someone typed wrong still shows the newest versions. */
+test("a cursor that is not a version number shows the newest versions", async () => {
+  const main = page.getByRole("main");
+
+  await page.goto(`${systemUrl}/disclosure?before=nine`);
+
+  await expect(
+    main.getByRole("heading", { name: "Published versions" }),
+  ).toBeVisible();
+  await expect(main.getByText("Version 3", { exact: true })).toBeVisible();
+  await expect(main.getByText("Current", { exact: true })).toBeVisible();
+  await expect(
+    main.getByRole("link", { name: "Back to the newest versions" }),
+  ).toHaveCount(0);
+});

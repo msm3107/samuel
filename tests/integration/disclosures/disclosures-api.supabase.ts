@@ -134,11 +134,11 @@ async function publish(systemId: string, body: unknown) {
   );
 }
 
-async function history(systemId: string) {
+async function history(systemId: string, query = "") {
   return listDisclosures(
     apiRequest(
       "GET",
-      `/api/organizations/${organization.id}/ai-systems/${systemId}/disclosures`,
+      `/api/organizations/${organization.id}/ai-systems/${systemId}/disclosures${query}`,
     ),
     context(systemId),
   );
@@ -465,5 +465,102 @@ describe("audit", () => {
         metadata: {},
       },
     ]);
+  });
+});
+
+describe("reading the history a page at a time (TASK-018a)", () => {
+  /** Publishes `count` versions and returns their numbers, oldest first. */
+  async function publishVersions(
+    systemId: string,
+    count: number,
+  ): Promise<number[]> {
+    const versions: number[] = [];
+    for (let n = 1; n <= count; n += 1) {
+      const response = await publish(systemId, {
+        message: message(`V${n}`),
+        language: "en",
+        enabled: true,
+        expectedVersion: versions.at(-1) ?? null,
+      });
+      expect(response.status).toBe(201);
+      const { disclosure } = (await response.json()) as DisclosureBody;
+      versions.push(disclosure.version);
+    }
+    return versions;
+  }
+
+  it("before is exclusive: only the versions below it, newest first", async () => {
+    actAs(member, memberClient);
+    const systemId = await makeSystem();
+    expect(await publishVersions(systemId, 5)).toEqual([1, 2, 3, 4, 5]);
+
+    const response = await history(systemId, "?before=3");
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as HistoryBody;
+    expect(body.disclosures.map((d) => d.version)).toEqual([2, 1]);
+    expect(body.truncated).toBe(false);
+    expect(body.aiSystemStatus).toBe("active");
+  });
+
+  it("paging by the last version of each page reads every one exactly once", async () => {
+    actAs(member, memberClient);
+    const systemId = await makeSystem();
+    await publishVersions(systemId, 5);
+
+    // A page of two, walked to the end the way the screen walks it.
+    const seen: number[] = [];
+    let cursor: number | undefined;
+    for (let page = 0; page < 5; page += 1) {
+      const response = await history(
+        systemId,
+        cursor === undefined ? "" : `?before=${cursor}`,
+      );
+      const body = (await response.json()) as HistoryBody;
+      const versions = body.disclosures.map((d) => d.version);
+      seen.push(...versions.slice(0, 2));
+      cursor = versions[1];
+      if (cursor === undefined) {
+        break;
+      }
+    }
+
+    expect(seen).toEqual([5, 4, 3, 2, 1]);
+  });
+
+  it("a cursor below the first version is an empty page, not a 404", async () => {
+    actAs(member, memberClient);
+    const systemId = await makeSystem();
+    await publishVersions(systemId, 2);
+
+    const response = await history(systemId, "?before=1");
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as HistoryBody;
+    expect(body).toEqual({
+      aiSystemStatus: "active",
+      disclosures: [],
+      truncated: false,
+    });
+  });
+
+  it("a system with no versions is still an empty page under a cursor", async () => {
+    actAs(member, memberClient);
+    const systemId = await makeSystem();
+
+    const response = await history(systemId, "?before=100");
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as HistoryBody;
+    expect(body.disclosures).toEqual([]);
+  });
+
+  it("a system in another organization is not found, cursor or no cursor", async () => {
+    actAs(member, memberClient);
+
+    const response = await history(randomUUID(), "?before=2");
+
+    expect(response.status).toBe(404);
+    expect((await readError(response)).code).toBe("ai_system_not_found");
   });
 });
