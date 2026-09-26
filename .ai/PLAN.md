@@ -357,6 +357,32 @@ is turned off, is not checked at all, which is why `disclosure_id` is not
 null. `metadata` holds facts about the check and never content fetched from
 the customer's page (§34).
 
+**Retention, settled in TASK-022** (owner, 2026-09-26; PR #39 review, note
+1). Verification evidence is kept for the life of the organization and
+expires never. That is the policy, and it is why `verification_checks` has
+no way to delete a row at all. It was settled while the table was empty
+because any other answer needs a door in an append-only trigger, and adding
+one later — under storage pressure, against evidence customers were told was
+append-only — is the worst condition to decide it under. **TASK-025's window
+size is therefore also a storage decision**: `unique (deployment_id,
+check_window)` fixes the rate at one row per active deployment per window,
+and hourly against daily is a factor of 24 in a table that is never pruned.
+
+**The hash chain's gap, recorded rather than closed** (owner, 2026-09-26;
+PR #39 review, note 2). §20's columns exist and nothing writes them. The
+gap is zero today and starts growing with TASK-025's first run, so README
+§20 now says plainly that evidence collected before the chain is built is
+not covered by it. Building the chain first was the alternative; it was not
+taken, because it would put the ordering question — what "previous record"
+means across deployments — ahead of having any evidence to reason about.
+
+**Owed by TASK-023** (PR #39 review, note 4). `metadata`'s promise — facts
+about the check, never content from the customer's page — is bounded today
+only in shape and size, which leaves room for page content. A key whitelist
+is enforceable in a check constraint, and it lands with the task that first
+writes metadata and therefore knows the vocabulary. Inventing the key names
+two tasks early would have been a guess that TASK-023 widened anyway.
+
 **Found in TASK-022, and it changes an existing guarantee for the better.**
 `verification_checks` holds foreign keys into `deployments` and
 `disclosures`, so Postgres now refuses a bare `truncate` of either with

@@ -113,6 +113,33 @@ describe("a verification check row", () => {
     ).toBe(true);
   });
 
+  it("refuses a success that contradicts its own observations", () => {
+    for (const contradiction of [
+      { widget_detected: false },
+      { http_status: null },
+      { widget_detected: null },
+    ]) {
+      expect(
+        verificationCheckRowSchema.safeParse({ ...row, ...contradiction })
+          .success,
+      ).toBe(false);
+    }
+    // A failure may have observed anything, or nothing.
+    expect(
+      verificationCheckRowSchema.safeParse({
+        ...row,
+        status: "failure",
+        failure_code: "WIDGET_NOT_FOUND",
+        widget_detected: false,
+      }).success,
+    ).toBe(true);
+    // And the observed version stays free on a success.
+    expect(
+      verificationCheckRowSchema.safeParse({ ...row, disclosure_version: null })
+        .success,
+    ).toBe(true);
+  });
+
   it("refuses a digest that is not 64 lowercase hex characters", () => {
     for (const wrong of ["a".repeat(63), "A".repeat(64), "g".repeat(64), ""]) {
       expect(

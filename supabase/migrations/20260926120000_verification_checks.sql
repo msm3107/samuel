@@ -45,6 +45,17 @@
 --   * `metadata` holds facts about the check, never content from the
 --     customer's page. A page can contain anything, including personal data
 --     of the customer's own visitors (README §34).
+--   * Evidence is kept for the life of the organization and expires never
+--     (PR #39 review, note 1; README §33). This is the retention policy,
+--     not the absence of one. It is why the trigger below has no door but
+--     a cascade: there is nothing to expire, so no role and no function may
+--     delete a row, and the append-only promise is literally true rather
+--     than true until a policy is written. Storage grows by one row per
+--     active deployment per window; TASK-025's window size is what fixes
+--     that rate, and it is chosen knowing this.
+--   * A success means a body was fetched and the widget was found
+--     (PR #39 review, note 3). The observation columns cannot contradict
+--     the outcome, for the same reason failure_code cannot.
 
 create table public.verification_checks (
   id uuid primary key default gen_random_uuid(),
@@ -109,6 +120,18 @@ create table public.verification_checks (
   disclosure_version integer
     constraint verification_checks_disclosure_version_check
       check (disclosure_version >= 1),
+  -- A success cannot contradict its own observations: it means a body was
+  -- fetched and the widget was found (owner, 2026-09-26). The same rule as
+  -- failure_code above, applied to the columns it was written for — this
+  -- table's whole value is that a customer can rely on it without reading
+  -- our code. `disclosure_version` stays free on a success: the widget can
+  -- be found without a readable version, which is what
+  -- DISCLOSURE_VERSION_MISMATCH records as a failure.
+  constraint verification_checks_success_observations_check
+    check (
+      status <> 'success'
+      or (http_status is not null and widget_detected)
+    ),
   -- Facts about the check: redirect chain length, response size, timings,
   -- which matcher failed. Never bytes from the customer's page (owner,
   -- 2026-09-26). Bounded in shape and size so nothing large or
@@ -164,7 +187,7 @@ create index verification_checks_organization_id_disclosure_id_idx
 alter table public.verification_checks enable row level security;
 
 comment on table public.verification_checks is
-  'Append-only evidence that a deployment was checked. Never updated; rows go only when their organization is deleted, since a deployment and an AI system are archived rather than deleted.';
+  'Append-only evidence that a deployment was checked. Never updated, and never expired: evidence is kept for the life of the organization (README §33). Rows go only when their organization is deleted, since a deployment and an AI system are archived rather than deleted.';
 
 comment on column public.verification_checks.metadata is
   'Facts about the check only — redirect count, response size, timings, which matcher failed. Never content fetched from the customer''s page (README §34).';

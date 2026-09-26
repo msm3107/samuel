@@ -92,7 +92,8 @@ Chosen by Mikołaj Smoliniec (project owner), 2026-09-26:
 
 ## Proposed by the implementer
 
-Awaiting the owner's sign-off.
+All twelve accepted on the PR #39 review. Accepted by Mikołaj Smoliniec
+(project owner), 2026-09-26.
 
 1. **Nothing writes this table but the service role.** No insert grant to
    `authenticated`, and no insert policy. Evidence is produced by the
@@ -158,6 +159,10 @@ Awaiting the owner's sign-off.
 - **`failure_code` is null if and only if `status` is `success`.**
 - **Two checks cannot exist for one deployment in one window.**
 - **No customer page content is stored**, in `metadata` or anywhere else.
+- **A success means a body was fetched and the widget was found**, so it
+  cannot contradict its own observation columns.
+- **Evidence expires never.** There is no way to delete a row but a cascade
+  from a deleted organization.
 - **Nothing in this table is readable across organizations**, under RLS.
 
 ## Acceptance criteria
@@ -184,3 +189,68 @@ Awaiting the owner's sign-off.
   exists.
 - Unit: the code list in `features/verification/` is exactly the constraint's
   list, asserted against the database rather than against a copy.
+
+## Amendment: the PR #39 review
+
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-26. Four
+non-blocking notes; one settled a policy, one added a constraint, one was
+recorded, one is owed by the next task.
+
+- **Note 1, retention was impossible to implement, and this was the cheapest
+  moment it would ever be. Settled: forever.** No role holds `delete` and
+  the trigger's only door is a cascade with a missing parent, so today a row
+  can never be expired — which means any other policy would need a migration
+  that adds a door to an append-only trigger, decided later, under storage
+  pressure, against a table that already holds evidence customers were told
+  was append-only. Evidence is now stated to be kept for the life of the
+  organization and expired never, in README §33, in Phase 7, in this
+  contract's invariants and in the table comment. The trigger needs no door
+  and gets none, so the append-only promise is literally true rather than
+  true until a policy is written. Cost, accepted: storage grows without a
+  ceiling, and the reviewer's sharpest point is recorded with it —
+  **TASK-025's window size is a storage decision**, because
+  `unique (deployment_id, check_window)` fixes the rate at one row per
+  active deployment per window and hourly against daily is a factor of 24.
+- **Note 2, the hash chain's gap. Recorded.** Every row written before §20's
+  chain exists sits outside it forever. The gap is zero today because
+  nothing writes evidence, and it starts growing with TASK-025's first run.
+  README §20 now says plainly that evidence collected before the chain is
+  built is not covered by it, so nobody later reads that section and
+  believes the chain proves something about every row. Rejected: building
+  the chain before the scheduler writes, which would put the ordering
+  question — what "previous record" means across deployments — ahead of
+  having any evidence to reason about.
+- **Note 3, a success could contradict its own observations. Applied.** The
+  contract argued that two columns must not be able to disagree, enforced it
+  for `failure_code`, and then left `http_status` and `widget_detected` free
+  on a success — so a row could say `success` with no response and no
+  widget, in the one table whose value is that a customer can rely on it
+  without reading our code. A success now means a body was fetched and the
+  widget was found, by constraint and by the row schema alike. Settled while
+  the table is empty, so the definition cost nothing to pin. The observed
+  version stays free: the widget can be found without a readable version
+  beside it, which is what `DISCLOSURE_VERSION_MISMATCH` records as a
+  failure. Five fixtures in the pgTAP file had to become coherent successes;
+  two of them caught the change by the error code rather than passing for
+  the wrong reason, which is what made the distinction worth having.
+- **Note 4, `metadata`'s promise is not a database one. Owed by TASK-023,
+  deliberately, and this is a departure from the reviewer's suggestion.**
+  The reviewer is right that a key whitelist is enforceable in a check
+  constraint and that this is the first table whose promise depends on every
+  future writer remembering it. It is not applied here because the
+  vocabulary is not known here: the keys would be a guess made two tasks
+  before anything writes them, and TASK-023 would widen the constraint on
+  its first commit — which is churn, not protection, since nothing writes
+  metadata in the window between the two. The obligation is written into
+  Phase 7 as owed by the task that first writes metadata and therefore knows
+  what belongs in it. The reviewer's honest limitation is recorded with it:
+  a whitelist bounds keys, not values.
+
+### Out of contract
+
+Recorded under the owner's standing permission to edit outside the Allowed
+files (2026-09-24):
+
+- `README.md` §20 and §33, beyond the §5 and §19 edits the Allowed files
+  named. Notes 1 and 2 are both answers that belong in those sections rather
+  than only in this contract.

@@ -83,7 +83,17 @@ export const verificationCheckRowSchema = z
   })
   .refine((row) => (row.status === "success") === (row.failure_code === null), {
     message: "a success carries no failure code, and a failure carries one",
-  });
+  })
+  .refine(
+    // The database's other coherence rule, mirrored: a success means a body
+    // was fetched and the widget was found, so it cannot contradict its own
+    // observations (owner, 2026-09-26). The observed version stays free —
+    // the widget can be found without a readable version beside it.
+    (row) =>
+      row.status !== "success" ||
+      (row.http_status !== null && row.widget_detected === true),
+    { message: "a success means a response arrived and the widget was found" },
+  );
 
 export type VerificationCheckRow = z.infer<typeof verificationCheckRowSchema>;
 

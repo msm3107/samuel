@@ -995,6 +995,15 @@ hash(
 
 This is not required for MVP launch but the schema should not make future integrity features impossible.
 
+The columns exist as of TASK-022, nullable and unpopulated, each constrained
+to 64 lowercase hex characters if present. **Nothing writes them, and
+evidence collected before the chain is built is not covered by it** (owner,
+2026-09-26; PR #39 review, note 2). The gap is zero today because nothing
+writes evidence at all; it starts growing with TASK-025's first scheduled
+run. If the chain is built later, there is a permanent before-and-after in
+the history, and any report that cites it has to say so rather than imply
+the chain proves something about every row.
+
 ---
 
 ## 21. Evidence Reports
@@ -1385,7 +1394,20 @@ deployment removal:
   preserve historical verification records
 ```
 
-Define the actual retention policy before production launch.
+**The retention policy for verification evidence is: kept for the life of
+the organization, expired never** (owner, 2026-09-26; TASK-022, PR #39
+review, note 1). This is the policy, not the absence of one, and it is why
+`verification_checks` has no way to delete a row: no role holds `delete`,
+no function does, and the append-only trigger's only door is a cascade from
+a parent that is already gone. Deleting the organization takes its evidence
+with it; nothing else does.
+
+It was settled while the table was empty, on purpose. Any other answer needs
+a door in an append-only trigger, and deciding that later — under storage
+pressure, against a table that already holds evidence customers were told
+was append-only — is the worst condition to decide it under. Storage grows
+by one row per active deployment per window, and the window size TASK-025
+chooses is what fixes that rate.
 
 ---
 

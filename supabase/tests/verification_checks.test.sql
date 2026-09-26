@@ -8,7 +8,7 @@
 -- everything rolls back.
 begin;
 
-select plan(26);
+select plan(30);
 
 -- Fixtures ------------------------------------------------------------------------
 
@@ -114,13 +114,58 @@ select throws_ok(
   'a status outside success and failure is refused'
 );
 
+select throws_ok(
+  $$ insert into public.verification_checks
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected)
+     values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
+             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-01', 200, false) $$,
+  '23514',
+  null,
+  'a success cannot say the widget was not found'
+);
+
+select throws_ok(
+  $$ insert into public.verification_checks
+       (organization_id, deployment_id, disclosure_id, status, check_window, widget_detected)
+     values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
+             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-01', true) $$,
+  '23514',
+  null,
+  'a success cannot say no response arrived'
+);
+
+-- A failure is free to have observed anything, or nothing: that is what
+-- the observation columns are for.
+select lives_ok(
+  $$ insert into public.verification_checks
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        failure_code, http_status, widget_detected)
+     values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
+             '00000000-0000-4000-8000-000000220d01', 'failure', '2000-01-04',
+             'WIDGET_NOT_FOUND', 200, false) $$,
+  'a failure may record a response in which the widget was not found'
+);
+
+-- The version stays free on a success: the widget can be found without a
+-- readable version beside it.
+select lives_ok(
+  $$ insert into public.verification_checks
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected, disclosure_version)
+     values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
+             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-05', 200, true, null) $$,
+  'a success may record no observed version'
+);
+
 -- Idempotency ---------------------------------------------------------------------
 
 select throws_ok(
   $$ insert into public.verification_checks
-       (organization_id, deployment_id, disclosure_id, status, check_window)
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected)
      values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c01',
-             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-01') $$,
+             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-01', 200, true) $$,
   '23505',
   null,
   'a second check for one deployment and window is refused'
@@ -128,17 +173,19 @@ select throws_ok(
 
 select lives_ok(
   $$ insert into public.verification_checks
-       (organization_id, deployment_id, disclosure_id, status, check_window)
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected)
      values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c01',
-             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-02') $$,
+             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-02', 200, true) $$,
   'the next window is a new row'
 );
 
 select throws_ok(
   $$ insert into public.verification_checks
-       (organization_id, deployment_id, disclosure_id, status, check_window)
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected)
      values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
-             '00000000-0000-4000-8000-000000220d01', 'success', '2999-01-01') $$,
+             '00000000-0000-4000-8000-000000220d01', 'success', '2999-01-01', 200, true) $$,
   '23514',
   null,
   'a window that begins after the check is refused'
@@ -148,9 +195,10 @@ select throws_ok(
 
 select throws_ok(
   $$ insert into public.verification_checks
-       (organization_id, deployment_id, disclosure_id, status, check_window)
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected)
      values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c03',
-             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-01') $$,
+             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-01', 200, true) $$,
   '23503',
   null,
   'a check cannot name another organization''s deployment'
@@ -158,9 +206,10 @@ select throws_ok(
 
 select throws_ok(
   $$ insert into public.verification_checks
-       (organization_id, deployment_id, disclosure_id, status, check_window)
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected)
      values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
-             '00000000-0000-4000-8000-000000220d02', 'success', '2000-01-01') $$,
+             '00000000-0000-4000-8000-000000220d02', 'success', '2000-01-01', 200, true) $$,
   '23503',
   null,
   'a check cannot name another organization''s disclosure'
@@ -203,18 +252,19 @@ select throws_ok(
 select lives_ok(
   $$ insert into public.verification_checks
        (organization_id, deployment_id, disclosure_id, status, check_window,
-        payload_hash, previous_record_hash)
+        http_status, widget_detected, payload_hash, previous_record_hash)
      values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
-             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-01',
+             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-01', 200, true,
              repeat('a', 64), repeat('b', 64)) $$,
   'a 64-character hex digest is accepted in both hash columns'
 );
 
 select throws_ok(
   $$ insert into public.verification_checks
-       (organization_id, deployment_id, disclosure_id, status, check_window, payload_hash)
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected, payload_hash)
      values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
-             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-03',
+             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-03', 200, true,
              repeat('A', 64)) $$,
   '23514',
   null,

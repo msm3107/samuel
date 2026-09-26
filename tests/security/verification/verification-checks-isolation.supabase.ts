@@ -170,6 +170,9 @@ describe("verification checks, as a signed-in user", () => {
       disclosure_id: "00000000-0000-4000-8000-000000000002",
       status: "success",
       check_window: "2026-09-26T00:00:00Z",
+      // A coherent row, so the only thing left to refuse it is the grant.
+      http_status: 200,
+      widget_detected: true,
     });
     // A member who could insert could manufacture their own compliance
     // history: there is no grant and no policy, so it fails on the grant.

@@ -94,6 +94,58 @@ deployment_id)` and `(organization_id, disclosure_id)` reference the unique
   `audit_events` says of itself. That is what §20's chain is for, and why
   its columns exist now rather than after customers rely on the table.
 
+### The PR #39 review
+
+Approved with four non-blocking notes. Three changed something here; one is
+owed by the next task.
+
+- **Note 1, retention was impossible to implement. Settled: forever.** No
+  role holds `delete` and the trigger's only door is a cascade, so today a
+  row can never be expired — meaning any other policy needs a migration that
+  adds a door to an append-only trigger, decided later, under storage
+  pressure, against a table that already holds evidence customers were told
+  was append-only. Evidence is now stated to be kept for the life of the
+  organization and expired never, in README §33, Phase 7, the contract's
+  invariants and the table comment. The trigger gets no door, so the
+  append-only promise is literally true rather than true until a policy is
+  written. The cost is recorded with it, and it is the reviewer's sharpest
+  point: **TASK-025's window size is a storage decision**, because
+  `unique (deployment_id, check_window)` fixes the rate at one row per
+  active deployment per window — hourly against daily is a factor of 24 in
+  a table that is never pruned.
+- **Note 2, the hash chain's gap. Recorded.** README §20 now says plainly
+  that evidence collected before the chain is built is not covered by it.
+  The gap is zero today and starts growing with TASK-025's first run.
+  Building the chain first was rejected: it would put the ordering question
+  — what "previous record" means across deployments — ahead of having any
+  evidence to reason about.
+- **Note 3, a success could contradict its own observations. Applied.** This
+  contract argued that two columns must not be able to disagree, enforced it
+  for `failure_code`, then left `http_status` and `widget_detected` free on
+  a success. A success now means a body was fetched and the widget was
+  found, by check constraint and by the row schema alike; the observed
+  version stays free, because the widget can be found without a readable
+  version beside it. Five pgTAP fixtures had to become coherent successes —
+  and two of them failed on the error code rather than passing for the wrong
+  reason, which is what made the change safe to make.
+- **Note 4, `metadata`'s promise is not a database one. Owed by TASK-023,
+  and this departs from the suggestion.** The reviewer is right that a key
+  whitelist is enforceable and that this is the first table whose promise
+  rests on every future writer remembering it. It is not applied here
+  because the vocabulary is not known here: the keys would be a guess made
+  two tasks before anything writes them, and TASK-023 would widen the
+  constraint on its first commit — churn rather than protection, since
+  nothing writes metadata in between. It is written into Phase 7 as owed by
+  the task that first writes metadata. The reviewer's own limitation is
+  recorded with it: a whitelist bounds keys, not values.
+
+### The sign-off list, checked again
+
+Every TASK-010 to TASK-021 contract **and** handoff carries an "Accepted by"
+marker — checked by listing the files that have none, not by sampling.
+TASK-022's pair was the only gap, and this commit closes it. The review's
+standing item is stale for the fifth time.
+
 ### What this changed about two existing tables, and why it is better
 
 Adding foreign keys into `deployments` and `disclosures` means Postgres now
@@ -112,13 +164,15 @@ file gained one assertion rather than having one rewritten.
 
 ### Tests
 
-- **pgTAP, 26 assertions**: `checked_at` is the database's; a success cannot
+- **pgTAP, 30 assertions**: `checked_at` is the database's; a success cannot
   carry a reason and a failure must; `SUCCESS` and an invented code are both
   refused; a second row for one deployment and window is refused and the next
   window is not; a window beginning after the check is refused; another
   organization's deployment and another's disclosure are each refused; the
   observation columns' bounds; a 64-character hex digest is accepted in both
-  hash columns and anything else refused; update, delete and truncate refused
+  hash columns and anything else refused; a success that says the widget was
+  not found, or that no response arrived, is refused, while a failure may
+  have observed anything and a success may have observed no version; update, delete and truncate refused
   for the table owner; a delete from inside another trigger refused while the
   parents exist; deleting a deployment and deleting an AI system each refused,
   deleting the organization allowed and taking the checks with it; and the
@@ -145,8 +199,8 @@ On the final state of the branch:
 pnpm typecheck                       pass (both projects)
 pnpm lint                            pass
 pnpm format:check                    pass
-pnpm test                            66 files, 1735 tests, pass
-supabase test db --local             9 files, 318 tests, pass
+pnpm test                            66 files, 1736 tests, pass
+supabase test db --local             9 files, 322 tests, pass
 vitest --config vitest.supabase.*    34 files, 413 tests, pass
 pnpm test:e2e:supabase               31 tests, pass
 next build                           pass
@@ -174,13 +228,14 @@ name rather than across the tree, for the same reason.
   revalidation. `lib/security/verification-target.ts` (TASK-012) already
   decides whether a hostname may be fetched at all; TASK-023 is the fetch
   itself and its bounds, each mapping to its own code.
-- **A retention policy is still undefined** (§33), and this is the table it
-  is about. Evidence grows by one row per active deployment per window,
-  forever. It was already owed; it now has a table.
-- **The hash chain is reserved, not built.** The columns accept a digest and
-  nothing writes one. If §20's chain is wanted, it is a later task, and the
-  ordering question — what "previous record" means across deployments — is
-  not answered here.
+- **TASK-025's window size is a storage decision**, now that retention is
+  forever and the unique key fixes the rate at one row per active deployment
+  per window. It should be chosen knowing that, not only as a freshness
+  question.
+- **`metadata` needs its key whitelist in TASK-023**, as above.
+- **The hash chain is reserved, not built**, and README §20 now says that
+  evidence predating it is not covered. The ordering question — what
+  "previous record" means across deployments — is still unanswered.
 - **Owed, unchanged:** `learnMoreUrl` as a whole; a cache purge on publish;
   a hard ceiling at the edge if the public endpoint's alert fires; key
   rotation plus `git stash drop`; stale-save protection on the AI system
