@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth/session-expiry";
 import { createProxySessionClient } from "@/lib/database/proxy-session-client";
 import { isDevelopment } from "@/lib/env/runtime-mode";
+import { STRICT_TRANSPORT_SECURITY } from "@/lib/http/hsts";
 import { serverEnv } from "@/lib/env/server-env";
 import { logger } from "@/lib/logging/logger";
 import { requestNetwork } from "@/lib/security/client-ip";
@@ -75,9 +76,13 @@ function applySecurityHeaders(
   );
 
   if (!isDevelopment) {
+    // Also set by next.config.ts for every path (PR #36 review, note 1).
+    // Kept here because the proxy returns some responses itself — the
+    // sign-in redirect and the session-unavailable 503 — and those do not
+    // pass through the framework's header pipeline.
     response.headers.set(
       "Strict-Transport-Security",
-      "max-age=63072000; includeSubDomains; preload",
+      STRICT_TRANSPORT_SECURITY,
     );
   }
 }

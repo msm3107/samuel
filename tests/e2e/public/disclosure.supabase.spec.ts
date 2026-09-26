@@ -67,6 +67,15 @@ test.describe("the public endpoint, as the network sees it", () => {
     );
     expect(response.headers()["permissions-policy"]).toContain("camera=()");
     expect(response.headers()["x-content-type-options"]).toBe("nosniff");
+
+    // HSTS was the one header excluding the proxy really did drop (PR #36
+    // review, note 1): the proxy was the only place that set it. This is
+    // the route most likely to be a third-party browser's first contact
+    // with the host, so it is the worst one to omit. It now comes from
+    // next.config.ts, which the proxy's matcher cannot narrow.
+    expect(response.headers()["strict-transport-security"]).toBe(
+      "max-age=63072000; includeSubDomains; preload",
+    );
   });
 
   test("refuses a wrong-cased identifier legibly", async ({ request }) => {

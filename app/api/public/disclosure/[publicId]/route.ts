@@ -5,6 +5,7 @@ import {
   PublicRequestError,
 } from "@/lib/http/public-api";
 import { logger } from "@/lib/logging/logger";
+import { oncePerWindow } from "@/lib/logging/once-per-window";
 import { requestNetwork } from "@/lib/security/client-ip";
 import { isPublicDeploymentId } from "@/lib/security/public-id";
 import {
@@ -15,6 +16,9 @@ import {
 } from "@/lib/security/rate-limit";
 
 const ROUTE = "GET /api/public/disclosure/[publicId]";
+
+/** A constant, never anything from a request: see `oncePerWindow`. */
+const CEILING_ALERT_KEY = "public_disclosure:ceiling";
 
 type RouteContext = { params: Promise<{ publicId: string }> };
 
@@ -105,6 +109,19 @@ async function assertWithinRateLimits(request: Request): Promise<void> {
 async function countServiceWide(): Promise<void> {
   try {
     if (await consumeRateLimit("publicDisclosureGlobal", GLOBAL)) {
+      return;
+    }
+    // Past the ceiling, calling the alert bucket on every request would add
+    // a third database write per request at the exact moment the service is
+    // busiest (PR #36 review, note 2). This process asks at most once per
+    // window; the bucket then decides whether the entry is written, so the
+    // log stays bounded across instances as well as within one.
+    if (
+      !oncePerWindow(
+        CEILING_ALERT_KEY,
+        RATE_LIMITS.publicDisclosureCeilingAlert.windowSeconds,
+      )
+    ) {
       return;
     }
     // Once per window, so the flood does not decide the error volume either.

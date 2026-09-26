@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -68,7 +68,22 @@ const NOTICE = {
   message: "You are interacting with an AI system.",
 };
 
+/**
+ * The ceiling alert and the fault log are bounded per process and per
+ * window (PR #36 review, notes 2 and 4), which is module state that would
+ * otherwise leak from one test into the next. Each test gets its own hour,
+ * and the two tests that exercise a window advance the clock themselves.
+ * Only `Date` is faked, so the route's promises still settle.
+ */
+let clock = Date.UTC(2026, 8, 26, 12);
+
+beforeEach(() => {
+  clock += 3_600_000;
+  vi.useFakeTimers({ toFake: ["Date"], now: clock });
+});
+
 afterEach(() => {
+  vi.useRealTimers();
   state.limits.length = 0;
   state.refuse.clear();
   state.unavailable.clear();
@@ -229,6 +244,85 @@ describe("the public disclosure endpoint", () => {
 
     expect(response.status).toBe(200);
     expect(state.logs).toEqual([]);
+  });
+
+  it("asks the alert bucket once per window, however long the flood lasts", async () => {
+    state.answer = { data: [NOTICE], error: null };
+    state.refuse.add("publicDisclosureGlobal");
+
+    await call(VALID_ID);
+    await call(VALID_ID);
+    await call(VALID_ID);
+
+    // PR #36 review, note 2: past the ceiling, asking on every request
+    // would add a third database write per request at the busiest moment.
+    // The bucket is asked once; the ceiling itself is still counted every
+    // time, because that is what the alert is about.
+    expect(
+      state.limits.filter((name) => name === "publicDisclosureCeilingAlert"),
+    ).toEqual(["publicDisclosureCeilingAlert"]);
+    expect(
+      state.limits.filter((name) => name === "publicDisclosureGlobal").length,
+    ).toBe(3);
+    expect(state.logs).toEqual([
+      { event: "public_disclosure_ceiling_reached" },
+    ]);
+  });
+
+  it("asks again once the window has passed", async () => {
+    state.answer = { data: [NOTICE], error: null };
+    state.refuse.add("publicDisclosureGlobal");
+
+    await call(VALID_ID);
+    vi.setSystemTime(clock + 301_000);
+    await call(VALID_ID);
+
+    // A flood that outlasts the window is still worth a second entry: the
+    // bound is on volume, not on ever hearing about it again.
+    expect(
+      state.limits.filter((name) => name === "publicDisclosureCeilingAlert")
+        .length,
+    ).toBe(2);
+    expect(state.logs).toHaveLength(2);
+  });
+
+  it("logs one entry for a run of identical faults, and still references each", async () => {
+    state.unavailable.add("publicDisclosureNetwork");
+
+    const first = await call(VALID_ID);
+    const second = await call(VALID_ID);
+    const firstBody = (await first.json()) as { error: { reference: string } };
+    const secondBody = (await second.json()) as {
+      error: { reference: string };
+    };
+
+    // PR #36 review, note 4: during an outage every request is a fault and
+    // a 503 is `no-store`, so nothing absorbs the repeats. The caller still
+    // gets a reference each time; what is bounded is what we write.
+    expect(second.status).toBe(503);
+    expect(secondBody.error.reference).toMatch(/^err_[0-9a-f]{12}$/);
+    expect(secondBody.error.reference).not.toBe(firstBody.error.reference);
+    expect(state.logs).toHaveLength(1);
+    expect(state.logs[0]).toMatchObject({
+      code: "service_unavailable",
+      reference: firstBody.error.reference,
+      boundedForSeconds: 60,
+    });
+  });
+
+  it("still logs a different fault while one is bounded", async () => {
+    state.unavailable.add("publicDisclosureNetwork");
+    await call(VALID_ID);
+    state.unavailable.clear();
+    state.answer = { data: [{ ...NOTICE, extra: true }], error: null };
+
+    const response = await call(VALID_ID);
+
+    // The bound is per code, so an unreadable row during an outage is not
+    // swallowed by the outage's own entry.
+    expect(response.status).toBe(500);
+    expect(state.logs).toHaveLength(2);
+    expect(state.logs[1]).toMatchObject({ code: "internal_error" });
   });
 
   it("serves the notice when the service-wide counter cannot answer", async () => {

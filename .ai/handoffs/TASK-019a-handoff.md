@@ -51,8 +51,17 @@ database's answer validated with Zod before it is sent; a separate
 `private, no-store`; only `200`, `404` and `400` cacheable; CORS `*` with no
 `Vary` and no `OPTIONS`; the proxy excluded from `/api/public/`; nothing a
 caller can provoke logged; README §11 corrected rather than emptied. The
-contract states each one's reason and what was rejected. **Awaiting the
-owner's sign-off.**
+contract states each one's reason and what was rejected. All twelve accepted
+on the PR #36 review. Accepted by Mikołaj Smoliniec (project owner),
+2026-09-26.
+
+On the PR #36 review (owner, 2026-09-26): HSTS moved into
+`next.config.ts`, because excluding this route from the proxy had dropped it
+here alone (note 1); the ceiling alert no longer spends a bucket write per
+request at peak (note 2); faults are logged once per code per minute
+(note 4); the edge, not `RATE_LIMITS`, is where a hard ceiling belongs when
+the alert fires in anger (note 3); and `version` stays by decision rather
+than by publication (note 5).
 
 ### Files changed
 
@@ -66,7 +75,11 @@ owner's sign-off.**
 - `proxy.ts`: `/api/public/` excluded from the matcher
 - `README.md` §11: the endpoint as it exists; `learnMoreUrl` marked planned
 - `.ai/PLAN.md`: Phase 6's invariant and exit criterion corrected to three
-  fields
+  fields, and the cache-purge limit recorded
+- `next.config.ts`, `lib/http/hsts.ts` (new), `proxy.ts`: HSTS applies to
+  every path, from one constant (PR #36 review, note 1)
+- `lib/logging/once-per-window.ts` (new): the per-process budget behind
+  notes 2 and 4
 
 ### Security considerations
 
@@ -107,10 +120,10 @@ owner's sign-off.**
 
 ### Tests
 
-Required by the contract: all covered. 39 new stubbed tests (16 schema, 23
-route), 6 real-database tests through the real handler, 4 browser tests
-against a production build, and 5 added to the matcher and rate-limit
-suites.
+Required by the contract: all covered. 48 new stubbed tests (16 schema, 27
+route, 5 for the window budget), 6 real-database tests through the real
+handler, 4 browser tests against a production build, and 5 added to the
+matcher and rate-limit suites.
 
 ### Recorded: what the production build proved, and corrected
 
@@ -133,6 +146,58 @@ cannot check either. Both were worth running:
   as well, so its guarantee does not rest on a configuration file that could
   be narrowed for another reason.
 
+### The PR #36 review
+
+Approved with five non-blocking notes. Three changed the code.
+
+- **note 1, applied:** `proxy.ts` was the only place setting HSTS, so
+  excluding `/api/public/` dropped it from this route alone — the route
+  most likely to be a third-party browser's first contact with the host,
+  and so the worst one to omit. The end-to-end spec had reasoned about the
+  missing CSP and not about this. HSTS now comes from `next.config.ts`,
+  which no matcher can narrow, with the value in `lib/http/hsts.ts`;
+  `proxy.ts` keeps applying it, because the sign-in redirect and the
+  session-unavailable `503` are the proxy's own responses and never reach
+  the framework's header pipeline.
+- **note 2, applied:** past the ceiling, the alert bucket was consulted on
+  every request, so the per-request database cost rose from two writes to
+  three exactly when the service was busiest. A process now asks once per
+  window; the bucket still decides whether the entry is written.
+- **note 3, recorded, nothing to change:** the limiter is itself database
+  load, so under a distributed flood it bends the wrong way — which is the
+  reason the alert-only ceiling is right, and the reason the answer to that
+  alert is a rate rule at the edge rather than another `RATE_LIMITS` entry.
+  Written into the contract so the next person finds it.
+- **note 4, applied:** a database outage made every request a `503` with its
+  own log entry, and `503` is `no-store`, so nothing absorbed the repeats.
+  Faults are logged once per code per minute per process. A suppressed
+  fault's reference finds no entry of its own; the one that is written says
+  so with `boundedForSeconds`.
+- **note 5, settled:** `version` stays, now by decision rather than by
+  publication. See the contract.
+
+### Recorded: the HSTS assertion was checked for vacuity
+
+Added to the end-to-end spec and then checked the way PR #35's revoke
+assertion was: with the `next.config.ts` entry removed, the built app
+answered the public route with no `strict-transport-security` at all
+(`Received: undefined`) and the assertion failed; restored, it passes. So
+the header really was missing before this change, and the test fails where
+it is meant to.
+
+### Two stale items, corrected
+
+The review's last two open items were already done and are not owed:
+
+- **`.ai/PLAN.md` Phase 6** already names TASK-019 and TASK-019a, and
+  already says rate limiting landed in Phase 1 (TASK-003c). Both were
+  corrected in PR #35 (`5f74527`).
+- **The TASK-010 to TASK-019 sign-offs** are all present, in every contract
+  and every handoff. `TASK-015-handoff.md` and `TASK-018a-handoff.md` look
+  empty to a search for the whole name only because it wraps across a line
+  break. TASK-019a's marker is the one that was open, and this commit
+  writes it.
+
 ### Recorded: the cost of the limiter on this surface
 
 A request that reaches the database spends two limiter round trips (network,
@@ -150,7 +215,7 @@ On the final state of the branch:
 pnpm typecheck                       pass
 pnpm lint                            pass
 pnpm format:check                    pass
-pnpm test                            61 files, 1693 tests, pass
+pnpm test                            62 files, 1702 tests, pass
 supabase test db --local             8 files, 290 tests, pass
 vitest --config vitest.supabase.*    32 files, 400 tests, pass
 pnpm test:e2e:supabase               16 tests, pass
@@ -190,6 +255,16 @@ named, never across the tree.
   identifiers, and both are bounded by the same per-network limit, so a
   canonical-spelling check would be code defending something the limiter
   already bounds.
+- **A hard ceiling belongs at the edge.** If the service-wide alert ever
+  fires in anger, the answer is a rate rule in front of the origin, not
+  another `RATE_LIMITS` entry: the limiter is itself database load, so
+  against the distributed flood it bends the wrong way (PR #36 review,
+  note 3).
+- **Nothing purges the cache on publish**, so about six minutes is the floor
+  on how fast a customer can take a wrong notice down, not just the typical
+  delay. Recorded in `.ai/PLAN.md` Phase 6 as a known limit to settle once
+  the widget exists; the fix is a purge in the publish path, not a shorter
+  header.
 - **The key rotation** (PR #35, note 5) is now more concrete still: a leaked
   anon key reaches `public_disclosure` directly against PostgREST, outside
   this route's rate limit and cache.

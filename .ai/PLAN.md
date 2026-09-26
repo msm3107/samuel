@@ -232,6 +232,15 @@ TASK-019 is two pull requests because the lookup is a migration and the
 endpoint reads it: a migration adding a function the application reads ships
 before the code that reads it (owner, 2026-09-25; PR #35).
 
+**Known limit, to settle in this phase.** Nothing purges the shared cache
+when a notice is published or withdrawn, so the endpoint's 60-second cache
+and its five minutes of background revalidation are not only the typical
+delay but the floor on how fast a customer can take a wrong notice down —
+about six minutes (owner, 2026-09-26; PR #36 review). The fix, if one is
+wanted once the widget exists, is a purge call in the publish path, not a
+shorter cache header: a shorter header pays on every page view of every
+customer site, while a purge pays only when something actually changed.
+
 **Depends on.** Phases 4 and 5.
 
 **Shared primitive.** Rate limiting was planned to land here, because the

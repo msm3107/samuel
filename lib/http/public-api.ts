@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { logger } from "@/lib/logging/logger";
+import { oncePerWindow } from "@/lib/logging/once-per-window";
 import { RateLimitUnavailableError } from "@/lib/security/rate-limit";
 
 /**
@@ -101,6 +102,15 @@ function newReference(): string {
  * A fault, not an outcome: it carries a reference that finds the log entry,
  * and never a message, stack trace, SQL, or anything from the request.
  */
+/**
+ * How long one fault code may go unlogged after an entry is written. A
+ * database outage makes every request here a fault, and a `503` is
+ * `no-store`, so nothing absorbs the repeats: an entry per request would let
+ * the outage decide the logging bill, which is the same reason the `404`
+ * carries no reference (PR #36 review, note 4).
+ */
+const FAULT_LOG_WINDOW_SECONDS = 60;
+
 function faultResponse(
   route: string,
   status: number,
@@ -108,17 +118,24 @@ function faultResponse(
   context: Record<string, unknown>,
 ): NextResponse {
   const reference = newReference();
-  logger.error(
-    {
-      event: "public_request_failed",
-      route,
-      status,
-      code,
-      reference,
-      ...context,
-    },
-    "A public request failed",
-  );
+  // Per code, so a `500` from an unreadable row is still logged during a
+  // `503` outage. The cost is stated rather than hidden: a suppressed
+  // fault's reference finds no entry of its own, so the entry that is
+  // written says for how long it stands for the others.
+  if (oncePerWindow(`public_fault:${code}`, FAULT_LOG_WINDOW_SECONDS)) {
+    logger.error(
+      {
+        event: "public_request_failed",
+        route,
+        status,
+        code,
+        reference,
+        boundedForSeconds: FAULT_LOG_WINDOW_SECONDS,
+        ...context,
+      },
+      "A public request failed",
+    );
+  }
   return NextResponse.json(
     { error: { code, reference } },
     { status, headers: publicHeaders(status) },

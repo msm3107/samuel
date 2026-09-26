@@ -84,7 +84,8 @@ Chosen by Mikołaj Smoliniec (project owner), 2026-09-26:
 
 ## Proposed by the implementer
 
-Awaiting the owner's sign-off.
+All twelve accepted on the PR #36 review. Accepted by Mikołaj Smoliniec
+(project owner), 2026-09-26.
 
 1. **The shape check comes first, and a malformed identifier is refused
    with a `400`** whose code is `invalid_deployment_id` (PR #35 review,
@@ -226,3 +227,82 @@ s-maxage=60, stale-while-revalidate=300` and
   and `/api/organizations/…` are not.
 - End-to-end (production build): the cache, CORS and `nosniff` headers
   survive the framework, and no dashboard CSP is stamped on the response.
+
+## Amendment: the PR #36 review
+
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-26. Five
+non-blocking notes; three changed the code, one is recorded here, one was
+settled.
+
+- **Note 1, HSTS. Applied.** `proxy.ts` was the only place that set
+  `Strict-Transport-Security`, so excluding `/api/public/` from the matcher
+  dropped it from this route alone — and this is the route most likely to
+  be a third-party browser's first contact with the host, which makes it
+  the worst one to omit. The handoff had reasoned about the missing CSP and
+  not about this. It now lives in `next.config.ts`, which applies it to
+  every path the framework serves, with the value in `lib/http/hsts.ts` so
+  the two places that apply it cannot drift. `proxy.ts` keeps applying it,
+  deliberately: the proxy returns the sign-in redirect and the
+  session-unavailable `503` itself, and those do not pass through the
+  framework's header pipeline. Rejected: moving it out of the proxy
+  entirely, which would have risked exactly that.
+- **Note 2, the third bucket write at peak. Applied.** Past the service-wide
+  ceiling, the alert bucket was consulted on every request, so the
+  per-request database cost rose from two writes to three at the busiest
+  moment — the opposite of what an alert should cost. A process now asks at
+  most once per window (`lib/logging/once-per-window.ts`), and the bucket
+  still decides whether the entry is written. The bound is per process, so
+  during an incident it is one attempt per window per instance; that is the
+  more useful signal anyway, and the global bucket keeps the log itself to
+  one entry. Rejected: sampling, which delays the first alert by chance.
+- **Note 3, a hard ceiling belongs at the edge, recorded.** The limiter is
+  itself database load, so under the flood it exists for it bends the wrong
+  way: every origin-reaching request pays two bucket writes before the
+  lookup, a refused one still pays one, and a `429` is `no-store` so a
+  limited network keeps arriving at full rate and keeps paying. Against the
+  distributed case this task deliberately accepts, the per-network limit
+  never fires at all. **So when the service-wide alert fires in anger, the
+  answer is a rate rule at the edge — Vercel's firewall, which costs the
+  origin nothing — and not another entry in `RATE_LIMITS`.** This is the
+  reason the alert-only decision is right, not an argument against it.
+- **Note 4, a `503` flood decides the logging bill. Applied.** When the
+  database is out the limiter is out too, so every request became a `503`
+  with its own log entry, and `503` is `no-store` so nothing absorbed the
+  repeats — the same problem the `404` and `429` paths deliberately avoid.
+  Faults are now logged once per code per minute per process. Per code, so
+  an unreadable row during an outage is not swallowed by the outage's entry.
+  Cost, stated rather than hidden: a suppressed fault's reference finds no
+  entry of its own, so the entry that is written carries
+  `boundedForSeconds` to say it stands for the others.
+- **Note 5, `version` stays**, now as a deliberate decision rather than by
+  publication (owner, 2026-09-26). It is in README §11 and the plan's
+  invariant, so it is a contract customers will build against and, like the
+  URL, effectively permanent. The reason is TASK-019's and has not changed:
+  this product exists to make a notice citable, and an auditor who records
+  "version 7 was live on this date" has evidence where the text alone may
+  since have changed. It also gives TASK-020 a natural cache key. Cost,
+  accepted: anyone holding a public identifier learns how often that notice
+  has been revised.
+
+The review also confirmed that the limiter keys on a header a client cannot
+forge, that IPv6 is bucketed by /64, that the cache policy is decided per
+status, that the anon client cannot acquire a session, that the strict
+response schema turns the future `learn_more_url` return-type change into a
+loud failure rather than a quiet new key, and that no `OPTIONS` handler is
+correct rather than an omission — a `GET` with no custom request headers
+never preflights.
+
+### Out of contract
+
+Recorded under the owner's standing permission to edit outside the Allowed
+files (2026-09-24), all from the review above:
+
+- `next.config.ts` and `lib/http/hsts.ts` (new): note 1's HSTS header and
+  the constant behind it.
+- `proxy.ts` beyond the matcher: it now reads that constant instead of
+  holding its own copy.
+- `lib/logging/once-per-window.ts` (new) and `tests/unit/logging/`: the
+  per-process budget behind notes 2 and 4.
+- `.ai/PLAN.md`: Phase 6 records that nothing purges the cache on publish,
+  so about six minutes is the floor on withdrawing a notice, and names the
+  fix as a purge in the publish path rather than a shorter header.
