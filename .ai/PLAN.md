@@ -311,7 +311,7 @@ is the only place those can be told apart for the person entitled to know.
 
 ---
 
-## Phase 7 — Verification service
+## Phase 7 — Verification service — **in progress**
 
 **Goal.** A scheduled job checks whether the disclosure is actually present.
 
@@ -344,7 +344,54 @@ compliance failure the customer discovers months later.
 **Note on evidence integrity.** `payload_hash` and `previous_record_hash`
 columns are created nullable in TASK-022 and left unpopulated. §20 does not
 require the chain for launch, but adding the columns later means a migration
-across evidence rows that customers are already relying on.
+across evidence rows that customers are already relying on. Done, with a
+check constraint on each: 64 lowercase hex characters if present.
+
+**Decisions taken in TASK-022** (owner, 2026-09-26). `status` says success
+or failure and `failure_code` carries the reason, null exactly when the
+status is success — so `SUCCESS` is not a stored code, and §19 is amended to
+say why. Idempotency is the database's: `unique (deployment_id,
+check_window)`, so a cron that fires twice cannot write two rows for one
+window. A deployment whose AI system has published nothing, or whose notice
+is turned off, is not checked at all, which is why `disclosure_id` is not
+null. `metadata` holds facts about the check and never content fetched from
+the customer's page (§34).
+
+**Retention, settled in TASK-022** (owner, 2026-09-26; PR #39 review, note
+1). Verification evidence is kept for the life of the organization and
+expires never. That is the policy, and it is why `verification_checks` has
+no way to delete a row at all. It was settled while the table was empty
+because any other answer needs a door in an append-only trigger, and adding
+one later — under storage pressure, against evidence customers were told was
+append-only — is the worst condition to decide it under. **TASK-025's window
+size is therefore also a storage decision**: `unique (deployment_id,
+check_window)` fixes the rate at one row per active deployment per window,
+and hourly against daily is a factor of 24 in a table that is never pruned.
+
+**The hash chain's gap, recorded rather than closed** (owner, 2026-09-26;
+PR #39 review, note 2). §20's columns exist and nothing writes them. The
+gap is zero today and starts growing with TASK-025's first run, so README
+§20 now says plainly that evidence collected before the chain is built is
+not covered by it. Building the chain first was the alternative; it was not
+taken, because it would put the ordering question — what "previous record"
+means across deployments — ahead of having any evidence to reason about.
+
+**Owed by TASK-023** (PR #39 review, note 4). `metadata`'s promise — facts
+about the check, never content from the customer's page — is bounded today
+only in shape and size, which leaves room for page content. A key whitelist
+is enforceable in a check constraint, and it lands with the task that first
+writes metadata and therefore knows the vocabulary. Inventing the key names
+two tasks early would have been a guess that TASK-023 widened anyway.
+
+**Found in TASK-022, and it changes an existing guarantee for the better.**
+`verification_checks` holds foreign keys into `deployments` and
+`disclosures`, so Postgres now refuses a bare `truncate` of either with
+`0A000` before their own no-truncate triggers can run. The protection is
+unchanged in substance and stronger in form — two independent refusals — but
+their pgTAP files had pinned the trigger's error code. Both now assert the
+foreign-key refusal _and_ that `truncate ... cascade` still meets the
+table's own trigger, so the guarantee cannot come to rest on another table
+continuing to exist.
 
 ---
 

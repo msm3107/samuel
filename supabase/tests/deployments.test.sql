@@ -4,7 +4,7 @@
 -- `pnpm test:db`; everything rolls back.
 begin;
 
-select plan(74);
+select plan(75);
 
 insert into public.organizations (id, name, slug)
 values
@@ -465,10 +465,22 @@ select throws_ok(
   '42501', 'deployments are archived, not deleted',
   'a deployment cannot be deleted, even by the table owner'
 );
+-- Two refusals, and both are asserted, because either one alone would be
+-- a weaker guarantee than it looks. Since TASK-022, verification_checks
+-- has a foreign key here, so Postgres refuses a bare truncate before any
+-- trigger runs; `cascade` gets past that rule and meets the table's own
+-- trigger. Asserting only the first would mean this protection quietly
+-- rested on another table continuing to exist.
 select throws_ok(
   $$ truncate public.deployments $$,
+  '0A000',
+  null,
+  'the table cannot be truncated: evidence rows reference it'
+);
+select throws_ok(
+  $$ truncate public.deployments cascade $$,
   '42501', 'deployments are archived, not deleted',
-  'the table cannot be truncated'
+  'and its own trigger refuses a cascading truncate'
 );
 select is(
   (select count(*)::int from public.deployments where hostname = 'fixed.example.com'),

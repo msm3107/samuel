@@ -8,7 +8,7 @@
 -- `pnpm test:db`; everything rolls back.
 begin;
 
-select plan(65);
+select plan(66);
 
 insert into public.organizations (id, name, slug)
 values
@@ -406,10 +406,19 @@ select is(
   'the refused delete left the row'
 );
 
+-- Both refusals, for the reason deployments.test.sql gives: since
+-- TASK-022 a foreign key from verification_checks stops a bare truncate
+-- before any trigger runs, and only `cascade` reaches this table's own.
 select throws_ok(
   $$ truncate public.disclosures $$,
+  '0A000',
+  null,
+  'the table cannot be truncated: evidence rows reference it'
+);
+select throws_ok(
+  $$ truncate public.disclosures cascade $$,
   '42501', 'disclosure versions are never deleted',
-  'the table cannot be truncated'
+  'and its own trigger refuses a cascading truncate'
 );
 
 -- The AI system cannot be deleted directly, only its organization (TASK-017,
