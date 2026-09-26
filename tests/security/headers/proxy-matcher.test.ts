@@ -24,6 +24,7 @@ describe("proxy matcher", () => {
     "/sign-in",
     "/dashboard",
     "/auth/callback",
+    "/api/organizations",
     // Paths that merely start like an excluded one keep their headers.
     "/widget-settings",
     "/widgets",
@@ -31,6 +32,9 @@ describe("proxy matcher", () => {
     "/widget.jsx",
     "/favicon.icon",
     "/_next/staticky",
+    "/api/publications",
+    "/api/public",
+    "/api/publicity/report",
   ])("sets security headers on %s", (path) => {
     expect(proxyRuns(path)).toBe(true);
   });
@@ -43,6 +47,10 @@ describe("proxy matcher", () => {
     "/favicon.ico",
     "/_next/static/chunks/app.js",
     "/_next/image",
+    // TASK-019a: the public endpoint has no session to refresh and no HTML
+    // to protect, and its answer must not depend on a cookie the proxy
+    // would read.
+    "/api/public/disclosure/dep_7k2m4qphr6vt3wzc5nxa7jd2fb",
   ])("leaves %s to be served without dashboard headers", (path) => {
     expect(proxyRuns(path)).toBe(false);
   });

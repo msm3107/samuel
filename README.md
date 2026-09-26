@@ -545,7 +545,7 @@ Example installation:
 <script
   async
   src="https://cdn.article50.dev/widget.js"
-  data-deployment="dep_public_xxxxx"
+  data-deployment="dep_7k2m4qphr6vt3wzc5nxa7jd2fb"
 ></script>
 ```
 
@@ -559,15 +559,24 @@ Supabase service credentials
 private customer metadata
 ```
 
-Use a random public deployment identifier.
+Use a random public deployment identifier. The database issues one per
+deployment: `dep_` and 26 characters of lowercase base32, about 130 random
+bits. It is fixed for that deployment's life, it names what to render, and
+it is never authorization.
 
 Example:
 
 ```
-dep_public_V7P4j4ATm9qW
+dep_7k2m4qphr6vt3wzc5nxa7jd2fb
 ```
 
-The public configuration endpoint returns only information required to render the disclosure.
+### The public configuration endpoint
+
+```
+GET /api/public/disclosure/{deploymentId}
+```
+
+It returns only the information required to render the disclosure.
 
 Example:
 
@@ -575,10 +584,50 @@ Example:
 {
   "version": 3,
   "language": "en",
-  "message": "You are interacting with an AI system.",
-  "learnMoreUrl": "https://example.com/ai-transparency"
+  "message": "You are interacting with an AI system."
 }
 ```
+
+No database identifier, organization, AI system, hostname, timestamp or
+author is returned, and no key beyond these three.
+
+A "learn more" link is planned and is **not** returned today: no column
+stores one and no screen can set one, so it would be an always-null key and
+a dead branch in the widget. It arrives with the column, the editor field
+and the widget's link together.
+
+Anything else is:
+
+```
+404 {"error":{"code":"disclosure_not_found"}}
+```
+
+— for every reason alike: an identifier that names no deployment, an
+archived deployment, an archived AI system, a closed organization, a system
+that has never published, and a notice that has been withdrawn. The endpoint
+does not say which, and so cannot be used to discover which deployments
+exist.
+
+An identifier of the wrong shape is refused before anything is looked up:
+
+```
+400 {"error":{"code":"invalid_deployment_id"}}
+```
+
+so a mistyped or wrong-cased identifier is visibly wrong rather than
+silently empty.
+
+Caching and access:
+
+```
+Cache-Control: public, max-age=0, s-maxage=60, stale-while-revalidate=300
+Access-Control-Allow-Origin: *
+```
+
+A published, corrected or withdrawn notice reaches visitors within about a
+minute. Reading it from any origin is deliberate — the notice is meant for
+everyone who visits the customer's site — and is not authorization. The
+endpoint is rate limited per network; a refusal is `429`.
 
 ---
 

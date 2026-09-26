@@ -9,6 +9,7 @@ import {
 } from "@/lib/auth/session-expiry";
 import { createProxySessionClient } from "@/lib/database/proxy-session-client";
 import { isDevelopment } from "@/lib/env/runtime-mode";
+import { STRICT_TRANSPORT_SECURITY } from "@/lib/http/hsts";
 import { serverEnv } from "@/lib/env/server-env";
 import { logger } from "@/lib/logging/logger";
 import { requestNetwork } from "@/lib/security/client-ip";
@@ -75,9 +76,13 @@ function applySecurityHeaders(
   );
 
   if (!isDevelopment) {
+    // Also set by next.config.ts for every path (PR #36 review, note 1).
+    // Kept here because the proxy returns some responses itself — the
+    // sign-in redirect and the session-unavailable 503 — and those do not
+    // pass through the framework's header pipeline.
     response.headers.set(
       "Strict-Transport-Security",
-      "max-age=63072000; includeSubDomains; preload",
+      STRICT_TRANSPORT_SECURITY,
     );
   }
 }
@@ -303,6 +308,15 @@ export const config = {
     // widget is deliberately served without dashboard security headers.
     // Anchored, so only `/widget`, `/widget/…` and `/widget.js` are excluded —
     // not every path that merely starts with "widget".
-    "/((?!_next/static/|_next/image|favicon\\.ico$|widget$|widget/|widget\\.js$).*)",
+    //
+    // `/api/public/…` is excluded for a different reason (TASK-019a): this
+    // proxy exists to refresh sessions and stamp HTML security headers, and
+    // on a surface with no session at all it would build a session client
+    // per request — which makes auth-js refresh in the background and spends
+    // `sessionRefreshNetwork` buckets — while making the response depend on
+    // cookies that a shared cache must never see. The public route sets its
+    // own `X-Content-Type-Options`. Anchored too, so `/api/publications`
+    // keeps its headers.
+    "/((?!_next/static/|_next/image|favicon\\.ico$|widget$|widget/|widget\\.js$|api/public/).*)",
   ],
 };

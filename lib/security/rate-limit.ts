@@ -121,6 +121,35 @@ export const RATE_LIMITS = {
     windowSeconds: 5 * 60,
     minIntervalSeconds: 0,
   },
+  // The public disclosure endpoint (TASK-019a), the one surface with no
+  // session at all. One page view is one request, but the 60-second shared
+  // cache absorbs the repeats, so the origin sees roughly one request per
+  // deployment per minute per region: a network that reaches this limit is
+  // asking for far more than a browser does. Past it, 429.
+  publicDisclosureNetwork: {
+    scope: "public_disclosure:network",
+    limit: 300,
+    windowSeconds: 5 * 60,
+    minIntervalSeconds: 0,
+  },
+  // Service-wide, and alert-only: past this the request is still served
+  // (project owner, 2026-09-26). A ceiling that refused would take every
+  // customer's notice off every customer's site at once, decided by
+  // whoever is making the noise.
+  publicDisclosureGlobal: {
+    scope: "public_disclosure:global",
+    limit: 20_000,
+    windowSeconds: 5 * 60,
+    minIntervalSeconds: 0,
+  },
+  // Bounds that alert to one entry per window, so the flood does not also
+  // decide the log volume.
+  publicDisclosureCeilingAlert: {
+    scope: "public_disclosure:ceiling_alert",
+    limit: 1,
+    windowSeconds: 5 * 60,
+    minIntervalSeconds: 0,
+  },
 } as const satisfies Record<string, RateLimit>;
 
 export type RateLimitName = keyof typeof RATE_LIMITS;

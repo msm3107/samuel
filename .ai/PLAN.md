@@ -232,6 +232,15 @@ TASK-019 is two pull requests because the lookup is a migration and the
 endpoint reads it: a migration adding a function the application reads ships
 before the code that reads it (owner, 2026-09-25; PR #35).
 
+**Known limit, to settle in this phase.** Nothing purges the shared cache
+when a notice is published or withdrawn, so the endpoint's 60-second cache
+and its five minutes of background revalidation are not only the typical
+delay but the floor on how fast a customer can take a wrong notice down —
+about six minutes (owner, 2026-09-26; PR #36 review). The fix, if one is
+wanted once the widget exists, is a purge call in the publish path, not a
+shorter cache header: a shorter header pays on every page view of every
+customer site, while a purge pays only when something actually changed.
+
 **Depends on.** Phases 4 and 5.
 
 **Shared primitive.** Rate limiting was planned to land here, because the
@@ -244,9 +253,12 @@ webhooks.
 
 **Security invariants introduced.**
 
-- The public endpoint returns only `version`, `language`, `message`, and
-  `learnMoreUrl`. No database identifiers, no organization metadata, no
-  verification state.
+- The public endpoint returns only `version`, `language` and `message`. No
+  database identifiers, no organization metadata, no verification state.
+  `learnMoreUrl` was listed here and is deferred (owner, 2026-09-25): no
+  column stores one and no screen can set one, so it would be an
+  always-null key. It joins this list with the column, the editor field and
+  the widget's link, in one later task.
 - The widget contains no secret, calls no private API, and uses no `eval`,
   `new Function`, `document.write`, inline handler, or remote code load.
 - The widget sets no cookie, reads no `localStorage`, and collects nothing.
@@ -256,7 +268,7 @@ webhooks.
   is a deliberate exception and is not authorization.
 
 **Exit criteria.** Built widget is under 10 KB compressed, measured and
-recorded. A test asserts the response body contains no key beyond the four
+recorded. A test asserts the response body contains no key beyond the three
 documented. The widget is verified against a page that already defines
 conflicting global names and CSS.
 
