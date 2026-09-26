@@ -156,13 +156,14 @@ test("the deployment page offers the tag, with this host and this deployment", a
   await expect(
     page.getByText("This tag is showing the current notice to visitors."),
   ).toBeVisible();
-  // Both policy entries, on the same host as the script above them.
+  // The host to add to an existing policy, not a policy to paste: a site
+  // that sends one already has these directives (PR #38 review, note 3).
+  const install = page.getByRole("region", { name: "Install" });
   await expect(
-    page.getByText(`script-src ${appUrl}`, { exact: false }),
+    install.getByText("Add this host to your existing"),
   ).toBeVisible();
-  await expect(
-    page.getByText(`connect-src ${appUrl}`, { exact: false }),
-  ).toBeVisible();
+  await expect(install.getByText(appUrl, { exact: true })).toBeVisible();
+  await expect(install.getByText(`script-src ${appUrl}`)).toHaveCount(0);
 });
 
 test("that exact snippet, pasted onto another origin, shows the notice", async () => {

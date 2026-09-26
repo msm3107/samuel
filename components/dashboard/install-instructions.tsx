@@ -67,7 +67,7 @@ export function InstallInstructions({
 
       <p className="mt-6">
         {notShowing
-          ? "Paste this into the page where the notice should appear. It is correct now and stays correct:"
+          ? "Paste this into the page where the notice should appear. It starts showing the notice as soon as there is one to show:"
           : "Paste this into the page where the notice should appear:"}
       </p>
       <pre className={SNIPPET}>
@@ -88,12 +88,19 @@ export function InstallInstructions({
         If your site sends a Content Security Policy
       </h3>
       <p className="mt-2">
-        Two entries, both this host — one to load the script, one to let it
-        fetch the notice:
+        Add this host to your existing <code>script-src</code> and{" "}
+        <code>connect-src</code> directives — one to load the script, one to let
+        it fetch the notice. Your site already has a policy, so this is not two
+        lines to paste:
       </p>
-      <pre className={SNIPPET}>
-        <code>{snippet.contentSecurityPolicy}</code>
-      </pre>
+      {/* Deliberately not shaped like the snippets above: a policy is the one
+          thing on this page that can never be copied whole, because the
+          customer already has one (PR #38 review, note 3). */}
+      <p className="mt-2">
+        <code className="rounded bg-slate-100 px-1.5 py-0.5 select-all">
+          {snippet.origin}
+        </code>
+      </p>
       <p className="mt-2 text-sm text-slate-700">
         No <code>style-src</code> exception is needed: the notice is styled
         through a constructable stylesheet rather than an inline one, inside its

@@ -21,14 +21,17 @@ export const WIDGET_PATH = "/widget.js";
 export type InstallSnippet = Readonly<{
   /** Absolute, for the script tag and for the policy entries alike. */
   scriptUrl: string;
-  /** The application's origin, for the Content Security Policy entries. */
+  /**
+   * The application's origin: the one host a customer adds to their
+   * existing `script-src` and `connect-src` directives. Not a policy to
+   * paste — a site that sends a policy already has one (PR #38 review,
+   * note 3).
+   */
   origin: string;
   /** The tag to paste where the notice should appear. */
   tag: string;
   /** The same tag, rendering into a container the customer names. */
   targetedTag: string;
-  /** What a site sending a Content Security Policy has to allow. */
-  contentSecurityPolicy: string;
 }>;
 
 /**
@@ -66,8 +69,5 @@ export function buildInstallSnippet(
     origin,
     tag: `<script${attributes}\n></script>`,
     targetedTag: `<script${attributes}\n  data-target="${EXAMPLE_TARGET}"\n></script>`,
-    // Both entries are the same host, built from it rather than written
-    // out, so they cannot come to disagree with the `src` above them.
-    contentSecurityPolicy: `script-src ${origin}\nconnect-src ${origin}`,
   });
 }

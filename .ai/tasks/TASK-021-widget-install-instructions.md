@@ -90,7 +90,8 @@ Chosen by Mikołaj Smoliniec (project owner), 2026-09-26:
 
 ## Proposed by the implementer
 
-Awaiting the owner's sign-off.
+All ten accepted on the PR #38 review. Accepted by Mikołaj Smoliniec
+(project owner), 2026-09-26.
 
 1. **The snippet is built by a pure function, and the page only renders
    it.** `features/deployments/install-snippet.ts` takes the public
@@ -154,6 +155,12 @@ Awaiting the owner's sign-off.
   tag, `async`, `src` on the application origin, `data-deployment`.
 - **The host is the configured one**, identical for every member and every
   request.
+- **`NEXT_PUBLIC_APP_URL` is part of the public contract from this merge.**
+  It is no longer only the host members sign in to: it is baked into script
+  tags on customers' pages and into the `script-src` and `connect-src`
+  directives of their Content Security Policies. It can change only behind a
+  permanent redirect for `/widget.js` and `/api/public/…` from the old host,
+  kept indefinitely (owner, 2026-09-26; PR #38 review, note 1).
 - **Readiness is read through the session client under RLS**, like every
   other read on this screen. The screen adds no privilege and no new
   endpoint.
@@ -185,3 +192,51 @@ Awaiting the owner's sign-off.
 - Browser: the deployment page shows the tag; that exact text, served on
   another origin, renders the notice; a system with nothing published shows
   the sentence that says so.
+
+## Amendment: the PR #38 review
+
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-26. Three
+non-blocking notes; one became an invariant, two changed the screen.
+
+- **Note 1, the application URL is now permanent, and nothing recorded it.
+  Recorded.** The contract stated the preview cost, which is the right cost
+  to state but not the durable one. TASK-019a already reasoned that the
+  endpoint's path is effectively permanent because customers put it in their
+  `connect-src`; from this merge that argument applies to the host, which is
+  a far larger commitment. What makes it sharp is that a domain change would
+  fail **silently** on the customer's side: the widget is deliberately quiet
+  about a network error, and a `404` from whoever holds the old domain next
+  is indistinguishable from the ordinary empty answer — the property that
+  protects visitors is the one that would hide this. The invariant above says
+  so. Rejected for today: separating the customer-facing host from the
+  dashboard's, which would also stop the dashboard's cookie origin being the
+  origin the whole internet calls. It is the exit if the domain ever has to
+  move, and it costs a second host, a certificate, an environment variable
+  and a README section that has already been through this shape once. Not
+  taken in a pull request that cannot test it.
+- **Note 2, a sentence claimed more than the code guarantees. Applied.** For
+  a deployment with nothing to show, the screen said the tag "is correct now
+  and stays correct" — an unconditional promise, and note 1 is exactly the
+  case where it stops holding. The same shape as PR #37's note 1: prose
+  asserting a property the implementation does not carry. It now says the
+  tag starts showing the notice as soon as there is one to show, which is
+  the deployment-specific claim that is actually kept.
+- **Note 3, the policy block invited pasting something that can never be
+  pasted. Applied.** `script-src <origin>` and `connect-src <origin>` sat in
+  the same `select-all` block as the tag, under a heading that reads like an
+  instruction — but a site that sends a policy already has those directives,
+  and needs this host added to them. The screen now names the host and says
+  to add it. The realistic failure was loud rather than quiet — the
+  customer's own scripts stop loading — so this was presentation, not
+  exposure. `buildInstallSnippet` lost its `contentSecurityPolicy` field
+  with the block that rendered it: an unused field whose test asserted
+  nothing anybody sees.
+
+### Out of contract
+
+Recorded under the owner's standing permission to edit outside the Allowed
+files (2026-09-24):
+
+- `README.md` §11 carried note 3's shape too — the same two lines in a code
+  block. It is the source text for this screen, so the two are corrected
+  together rather than left to disagree.

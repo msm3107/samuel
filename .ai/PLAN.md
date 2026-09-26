@@ -271,6 +271,18 @@ webhooks.
   installation is otherwise indistinguishable from a working one.
 - The endpoint's CORS policy permits reading configuration cross-origin; that
   is a deliberate exception and is not authorization.
+- `NEXT_PUBLIC_APP_URL` is part of the public contract from TASK-021. It is
+  no longer only the host members sign in to: the dashboard bakes it into
+  script tags on customers' pages and into the `script-src` and
+  `connect-src` directives of their Content Security Policies. It can change
+  only behind a permanent redirect for `/widget.js` and `/api/public/…` from
+  the old host, kept indefinitely (owner, 2026-09-26; PR #38 review, note
+  1). A domain change would otherwise fail silently on the customer's side:
+  the widget is deliberately quiet about a network error, and a `404` from
+  whoever holds the old domain next is indistinguishable from the ordinary
+  empty answer. Serving customers from a host separate from the dashboard's
+  is the exit if it ever has to move, and would also stop the dashboard's
+  cookie origin being the origin the whole internet calls.
 
 **Exit criteria.** The widget is under 10 KB compressed, measured and
 recorded — of the shipped file itself, since it is deliberately not built

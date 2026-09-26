@@ -48,13 +48,16 @@ describe("the installation snippet", () => {
     ]);
   });
 
-  it("allows both Content Security Policy entries, and only this host", () => {
-    const { contentSecurityPolicy } = buildInstallSnippet(PUBLIC_ID, APP_URL);
+  it("offers the one host a customer adds to their existing directives", () => {
+    // Not a policy to paste: a site that sends one already has `script-src`
+    // and `connect-src`, and this host is added to them (PR #38 review,
+    // note 3). The origin is what the screen shows, so the origin is what
+    // is built.
+    const { origin, scriptUrl } = buildInstallSnippet(PUBLIC_ID, APP_URL);
 
-    expect(contentSecurityPolicy).toBe(
-      `script-src https://app.article50.example
-connect-src https://app.article50.example`,
-    );
+    expect(origin).toBe("https://app.article50.example");
+    // The same host the script is loaded from, so the two cannot disagree.
+    expect(scriptUrl.startsWith(`${origin}/`)).toBe(true);
   });
 
   it("serves the widget from the root, whatever path the app URL carries", () => {
@@ -74,7 +77,7 @@ connect-src https://app.article50.example`,
 
     const local = buildInstallSnippet(PUBLIC_ID, "http://localhost:3000");
     expect(local.scriptUrl).toBe("http://localhost:3000/widget.js");
-    expect(local.contentSecurityPolicy).toContain("http://localhost:3000");
+    expect(local.origin).toBe("http://localhost:3000");
   });
 
   it("refuses an identifier that is not a public deployment ID", () => {

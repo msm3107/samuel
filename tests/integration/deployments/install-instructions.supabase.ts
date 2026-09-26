@@ -211,10 +211,15 @@ describe("the installation section", () => {
     );
     expect(html).toContain(escaped(`data-deployment="${publicId}"`));
     expect(html).toContain(escaped(`data-target="#site-footer"`));
-    // Both policy entries, on the same host as the script above them.
+    // The host to add to an existing policy, named beside the directives
+    // it belongs in rather than offered as two lines to paste.
     const { origin } = new URL(appUrl);
-    expect(html).toContain(`script-src ${origin}`);
-    expect(html).toContain(`connect-src ${origin}`);
+    const section = installSection(html);
+    expect(section).toContain("Add this host to your existing");
+    expect(section).toContain("script-src");
+    expect(section).toContain("connect-src");
+    expect(section).toContain(`>${origin}</code>`);
+    expect(section).not.toContain(`script-src ${origin}`);
     expect(html).toContain(INSTALL_READINESS_MESSAGES.live);
   });
 

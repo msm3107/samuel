@@ -52,7 +52,13 @@ shown even when nothing will render; `data-target` is a second snippet
 rather than prose; the CSP entries are generated from the same host; only
 `public_id` reaches the section; the browser test installs what the
 dashboard generated. The contract states each one's reason and what was
-rejected. **Awaiting sign-off.**
+rejected. All ten accepted on the PR #38 review. Accepted by Mikołaj
+Smoliniec (project owner), 2026-09-26.
+
+On the PR #38 review (owner, 2026-09-26): the application URL is recorded as
+part of the public contract (note 1); a sentence that promised more than the
+code guarantees was corrected (note 2); and the policy block no longer
+invites pasting something a customer can never paste (note 3).
 
 ### Files changed
 
@@ -93,6 +99,16 @@ rejected. **Awaiting sign-off.**
   no oracle for which deployments exist. That is exactly why the dashboard
   has to distinguish them: it is the one place where the person asking is
   entitled to the answer.
+- **`NEXT_PUBLIC_APP_URL` becomes part of the public contract here.** From
+  this merge it is baked into script tags on customers' pages and into their
+  `script-src` and `connect-src` directives, so it can change only behind a
+  permanent redirect for `/widget.js` and `/api/public/…` from the old host,
+  kept indefinitely. Written into the contract's invariants and Phase 6's.
+  The reason it is worth writing down rather than remembering: a domain
+  change fails **silently** on the customer's side, because the widget is
+  deliberately quiet about a network error and a `404` from whoever holds
+  the old domain next is indistinguishable from the ordinary empty answer.
+  The property that protects visitors is the one that would hide this.
 - **No JavaScript was added to the dashboard.** The section is a server
   component; snippets are selected with `select-all` and copied with the
   reader's own keyboard.
@@ -136,6 +152,36 @@ speaking. It is the browser's line, not the widget's, and no page can
 suppress it — so the test now measures what the widget says, filtering on
 `[article50]` exactly as the widget's own suite does, and it waits for the
 lookup to answer rather than for a duration.
+
+### The PR #38 review
+
+Approved with three non-blocking notes. All three are addressed.
+
+- **Note 1, recorded as an invariant.** See the security note above. The
+  alternative — a customer-facing host separate from the dashboard's, which
+  would also stop the dashboard's cookie origin being the origin the whole
+  internet calls — is named in the contract as the exit if the domain ever
+  has to move, and was not taken in a pull request that cannot test it.
+- **Note 2, applied.** For a deployment with nothing to show, the screen
+  said the tag "is correct now and stays correct". True in intent, but an
+  unconditional promise, and note 1 is exactly where it stops holding — the
+  same shape as the defect in PR #37. It now says the tag starts showing the
+  notice as soon as there is one to show, which is the claim that is kept.
+- **Note 3, applied.** The two policy entries sat in the same `select-all`
+  block as the tag, under a heading that reads like an instruction — but a
+  site that sends a policy already has `script-src` and `connect-src`, and
+  needs this host added to them. The screen now names the host and says to
+  add it, and README §11 was corrected to match, since it is the source text
+  for this screen. `buildInstallSnippet` lost its `contentSecurityPolicy`
+  field along with the block that rendered it: an unused field whose test
+  asserted nothing anybody sees.
+
+### The sign-off list, checked again
+
+Every TASK-010 to TASK-020 contract **and** handoff carries an "Accepted by"
+marker — counted across all 30 files, not sampled. TASK-021's was the only
+one open, and this commit writes it. The review's standing item is stale for
+the fourth time.
 
 ### Commands run
 
