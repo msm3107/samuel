@@ -218,7 +218,7 @@ database level, proven by an integration test rather than by convention.
 
 ---
 
-## Phase 6 — Public widget and configuration endpoint
+## Phase 6 — Public widget and configuration endpoint — **complete**
 
 **Goal.** One script tag renders the disclosure on a customer site.
 
@@ -271,18 +271,43 @@ webhooks.
   installation is otherwise indistinguishable from a working one.
 - The endpoint's CORS policy permits reading configuration cross-origin; that
   is a deliberate exception and is not authorization.
+- `NEXT_PUBLIC_APP_URL` is part of the public contract from TASK-021. It is
+  no longer only the host members sign in to: the dashboard bakes it into
+  script tags on customers' pages and into the `script-src` and
+  `connect-src` directives of their Content Security Policies. It can change
+  only behind a permanent redirect for `/widget.js` and `/api/public/…` from
+  the old host, kept indefinitely (owner, 2026-09-26; PR #38 review, note
+  1). A domain change would otherwise fail silently on the customer's side:
+  the widget is deliberately quiet about a network error, and a `404` from
+  whoever holds the old domain next is indistinguishable from the ordinary
+  empty answer. Serving customers from a host separate from the dashboard's
+  is the exit if it ever has to move, and would also stop the dashboard's
+  cookie origin being the origin the whole internet calls.
 
 **Exit criteria.** The widget is under 10 KB compressed, measured and
 recorded — of the shipped file itself, since it is deliberately not built
-(TASK-020): 4191 bytes gzipped from 11566 bytes of source. A test asserts the response body contains no key beyond the three
-documented. The widget is verified against a page that already defines
-conflicting global names and CSS.
+(TASK-020): 4191 bytes gzipped from 11566 bytes of source. A test asserts
+the response body contains no key beyond the three documented. The widget
+is verified against a page that already defines conflicting global names
+and CSS. The dashboard generates the installation for a deployment, and a
+browser test installs exactly what it generated, unedited, on a page at
+another origin (TASK-021) — an install document that drifts from the
+product is the one failure a document cannot catch about itself.
 
 **Decision taken before starting.** `widget.js` is served from the
 application origin (owner, 2026-09-26; open decision 1, TASK-020). The
 customer allows one host in `script-src` and `connect-src`, the script is one
 URL revalidated hourly, and the widget finds the configuration endpoint from
 its own script URL.
+
+**Decision taken in TASK-021.** The dashboard generates the tag from
+`NEXT_PUBLIC_APP_URL`, not from the request's host (owner, 2026-09-26): one
+configured truth, already what `lib/http/api.ts` trusts as this
+deployment's own origin, so every member is handed the same snippet whatever
+host they reached the dashboard on. The deployment page also says whether an
+installed tag would render anything — the public endpoint answers
+identically for all six reasons it would not, deliberately, so the dashboard
+is the only place those can be told apart for the person entitled to know.
 
 ---
 

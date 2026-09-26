@@ -539,6 +539,12 @@ Billing and ownership transfer should require `owner`.
 
 ## 11. Public Widget
 
+**The dashboard generates this for you.** Open a deployment and its Install
+section has the exact tag, already carrying that deployment's public
+identifier and this installation's host, with the Content Security Policy
+entries beside it and a plain statement of whether it would render anything
+today (TASK-021). What follows is the same installation, explained.
+
 Example installation:
 
 ```html
@@ -585,13 +591,10 @@ paragraph with `::part(notice)`:
 }
 ```
 
-If your site sends a Content Security Policy, the widget needs two entries
-— both the same host:
-
-```
-script-src https://your-article50-host
-connect-src https://your-article50-host
-```
+If your site sends a Content Security Policy, add the Article50.js host to
+your existing `script-src` and `connect-src` directives — one to load the
+script, one to let it fetch the notice. A site that sends a policy already
+has those directives, so this is a host to add, not two lines to paste.
 
 It needs no `style-src` exception: its styles go in through a constructable
 stylesheet rather than an inline `<style>`, and no element carries a `style`

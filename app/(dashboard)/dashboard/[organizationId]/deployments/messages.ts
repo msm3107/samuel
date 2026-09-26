@@ -1,4 +1,5 @@
 import type { HostnameErrorCode } from "@/features/deployments/deployment-fields";
+import type { InstallReadinessState } from "@/features/deployments/install-readiness";
 
 /**
  * What the deployment forms can report (TASK-015), each with fixed text. An
@@ -77,4 +78,27 @@ export type DeploymentStatusState = Readonly<{
 /** Whether a status result is a refusal, to mark it as a problem in words. */
 export function isStatusProblem(result: DeploymentStatusResult): boolean {
   return result !== "archived" && result !== "restored";
+}
+
+/**
+ * What the installation section says about whether an installed tag would
+ * render anything (TASK-021). The public endpoint answers the same way for
+ * every one of these, on purpose; this screen is where they are told apart,
+ * for the person entitled to know.
+ */
+export const INSTALL_READINESS_MESSAGES = {
+  live: "This tag is showing the current notice to visitors.",
+  deployment_archived:
+    "This deployment is archived, so the tag renders nothing. Restore it to start showing the notice again.",
+  system_archived:
+    "Its AI system is archived, so the tag renders nothing until the system is restored.",
+  never_published:
+    "No notice has been published for this AI system yet, so the tag renders nothing. Install it now if you like: it starts showing the notice the moment one is published.",
+  disabled:
+    "The current notice is turned off, so the tag renders nothing. Turn it on to start showing it again.",
+} as const satisfies Record<InstallReadinessState, string>;
+
+/** Whether the tag would render nothing today, to mark it as a caution. */
+export function isNotShowing(state: InstallReadinessState): boolean {
+  return state !== "live";
 }
