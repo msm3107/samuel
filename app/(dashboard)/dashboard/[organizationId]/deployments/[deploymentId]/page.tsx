@@ -5,20 +5,43 @@ import { z } from "zod";
 import { Breadcrumbs } from "@/components/dashboard/breadcrumbs";
 import { DeploymentStatusForm } from "@/components/dashboard/deployment-status-form";
 import { Hostname } from "@/components/dashboard/hostname";
+import { InstallInstructions } from "@/components/dashboard/install-instructions";
 import { TEXT_LINK } from "@/components/ui/styles";
 import { readAiSystem } from "@/features/ai-systems/ai-system-queries";
 import { DEPLOYMENT_STATUS_LABELS } from "@/features/deployments/deployment-fields";
 import { readDeployment } from "@/features/deployments/deployment-queries";
+import {
+  installReadiness,
+  type InstallReadinessState,
+} from "@/features/deployments/install-readiness";
+import { readCurrentDisclosureState } from "@/features/disclosures/disclosure-queries";
 import { minimumRoleFor, roleSatisfies } from "@/lib/auth/organization-roles";
+import { serverEnv } from "@/lib/env/server-env";
 
 import {
   organizationAccessOrNotFound,
   organizationOrNotFound,
 } from "../../access";
+import { disclosurePath } from "../../systems/[systemId]/disclosure/messages";
 import { systemPath, systemsPath } from "../../systems/messages";
 import { setDeploymentStatusAction } from "../actions";
 
 const deploymentIdSchema = z.uuid();
+
+/**
+ * Where the installation section sends somebody whose tag would render
+ * nothing (TASK-021). Fixed text and a fixed destination per state, like
+ * every other message on these screens. `deployment_archived` has none:
+ * restoring it is the control further down this same page, and `live`
+ * needs no fixing.
+ */
+const FIXES: Partial<
+  Record<InstallReadinessState, { to: "system" | "disclosure"; label: string }>
+> = {
+  system_archived: { to: "system", label: "Open the AI system" },
+  never_published: { to: "disclosure", label: "Publish a notice" },
+  disabled: { to: "disclosure", label: "Open the notice" },
+};
 
 /** Always in UTC, said as such: the server doesn't know the reader's zone. */
 const REGISTERED_AT = new Intl.DateTimeFormat("en-GB", {
@@ -54,10 +77,15 @@ export default async function DeploymentPage({
   if (deployment === null) {
     notFound();
   }
-  // The system's name, for the heading's trail and the link back. The same
-  // organization's, through the same row-level security; gone only if it
-  // was deleted since, which is then not found like the deployment.
-  const aiSystem = await readAiSystem(access, deployment.aiSystemId);
+  // The system's name, for the heading's trail and the link back, and the
+  // current version of its notice, for whether an installed tag would show
+  // anything (TASK-021). The same organization's, through the same
+  // row-level security; the system is gone only if it was deleted since,
+  // which is then not found like the deployment.
+  const [aiSystem, currentDisclosure] = await Promise.all([
+    readAiSystem(access, deployment.aiSystemId),
+    readCurrentDisclosureState(access, deployment.aiSystemId),
+  ]);
   if (aiSystem === null) {
     notFound();
   }
@@ -68,6 +96,15 @@ export default async function DeploymentPage({
   const archived = deployment.status === "archived";
   const systemArchived = deployment.aiSystemStatus === "archived";
   const toSystem = systemPath(access.organizationId, aiSystem.id);
+  const toDisclosure = disclosurePath(access.organizationId, aiSystem.id);
+  const readiness = installReadiness({
+    deploymentStatus: deployment.status,
+    aiSystemStatus: deployment.aiSystemStatus,
+    current: currentDisclosure,
+  });
+  // Where to go to make the tag render, when it would not today. An
+  // archived deployment has no link: the control for it is on this page.
+  const fix = FIXES[readiness.state];
 
   return (
     <main id="main" className="mx-auto max-w-2xl px-6 py-12">
@@ -113,8 +150,8 @@ export default async function DeploymentPage({
             {deployment.publicId}
           </code>
           <p className="mt-1 text-sm text-slate-700">
-            What your site will name in the widget&apos;s install code, which
-            comes with the widget. It is public, and grants no access.
+            What names this deployment in the install code below. It is public,
+            and grants no access.
           </p>
         </dd>
         <dt className="font-medium">Registered</dt>
@@ -124,6 +161,20 @@ export default async function DeploymentPage({
           </time>
         </dd>
       </dl>
+
+      <InstallInstructions
+        publicId={deployment.publicId}
+        appUrl={serverEnv().NEXT_PUBLIC_APP_URL}
+        readiness={readiness}
+        fix={
+          fix === undefined
+            ? undefined
+            : {
+                href: fix.to === "system" ? toSystem : toDisclosure,
+                label: fix.label,
+              }
+        }
+      />
 
       {canManage ? (
         <section className="mt-12" aria-labelledby="status-heading">

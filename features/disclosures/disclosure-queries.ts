@@ -13,6 +13,7 @@ import type { OrganizationAccess } from "@/lib/auth/require-organization-role";
 import { createResolvingSessionClient } from "@/lib/database/session-client";
 
 import type {
+  CurrentDisclosureState,
   PublishDisclosureInput,
   SerializedDisclosure,
 } from "./disclosure";
@@ -162,6 +163,50 @@ export async function listDisclosures(
     truncated: parsed.disclosures.length > DISCLOSURE_LIST_LIMIT,
   };
 }
+
+/**
+ * The newest version of one AI system's notice, or null if it has none
+ * (TASK-021). Two columns of one row: the dashboard's installation section
+ * asks whether an installed tag would render anything, which the public
+ * endpoint deliberately cannot answer.
+ *
+ * Not `listDisclosures`: that reads up to 201 rows with their full
+ * messages, which is a large read for a yes-or-no question on a screen that
+ * shows no message. `enabled` is read from the current version alone, as
+ * `public.public_disclosure` requires it — a notice turned off is turned
+ * off, never replaced by an older one that was on.
+ *
+ * The same session client and the same row-level security as every other
+ * read here: another organization's system returns null rather than a row.
+ */
+export async function readCurrentDisclosureState(
+  access: OrganizationAccess,
+  aiSystemId: string,
+): Promise<CurrentDisclosureState> {
+  assertAccessAllows(access, "organization.read");
+  const { supabase } = await createResolvingSessionClient();
+  const { data, error } = await supabase
+    .from("disclosures")
+    .select("version, enabled")
+    .eq("organization_id", access.organizationId)
+    .eq("ai_system_id", aiSystemId)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new DisclosureQueryError(error.code, { cause: error });
+  }
+  if (data === null) {
+    return null;
+  }
+  const parsed = currentStateSchema.parse(data);
+  return Object.freeze({ version: parsed.version, enabled: parsed.enabled });
+}
+
+const currentStateSchema = z.object({
+  version: z.int().min(1),
+  enabled: z.boolean(),
+});
 
 /**
  * Publishes a version through `public.publish_disclosure`, which refuses it

@@ -269,7 +269,10 @@ test("registers, archives and restores a deployment by keyboard alone", async ()
   await page.keyboard.press("Enter");
 
   await expect(page).toHaveURL(/\/deployments\/[0-9a-f-]{36}$/);
-  const publicId = main.locator("code");
+  // The description list, not the page: the installation section below it
+  // (TASK-021) shows the same identifier inside a script tag, and several
+  // other `code` elements besides.
+  const publicId = main.locator("dl code");
   await expect(publicId).toHaveText(/^dep_[a-z2-7]{26}$/);
   const registeredId = await publicId.textContent();
 

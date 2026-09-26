@@ -96,3 +96,14 @@ export type SerializedDisclosure = Readonly<{
   createdAt: string;
   createdBy: string;
 }>;
+
+/**
+ * The newest version of one AI system's notice: what
+ * `readCurrentDisclosureState` answers, and all TASK-021's installation
+ * section needs to know about a notice. Never the message itself — that
+ * screen shows no message.
+ */
+export type CurrentDisclosureState = Readonly<{
+  version: number;
+  enabled: boolean;
+}> | null;

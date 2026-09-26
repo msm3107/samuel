@@ -539,6 +539,12 @@ Billing and ownership transfer should require `owner`.
 
 ## 11. Public Widget
 
+**The dashboard generates this for you.** Open a deployment and its Install
+section has the exact tag, already carrying that deployment's public
+identifier and this installation's host, with the Content Security Policy
+entries beside it and a plain statement of whether it would render anything
+today (TASK-021). What follows is the same installation, explained.
+
 Example installation:
 
 ```html
