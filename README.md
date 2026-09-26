@@ -544,10 +544,58 @@ Example installation:
 ```html
 <script
   async
-  src="https://cdn.article50.dev/widget.js"
+  src="https://your-article50-host/widget.js"
   data-deployment="dep_7k2m4qphr6vt3wzc5nxa7jd2fb"
 ></script>
 ```
+
+`widget.js` is served from the application's own origin — the host you sign
+in to — not a separate CDN domain (owner, 2026-09-26). One host to allow, and
+the widget finds the configuration endpoint from its own script URL, so
+nothing else is configured.
+
+The notice renders where the script tag is. To put it somewhere else, name a
+container:
+
+```html
+<script
+  async
+  src="https://your-article50-host/widget.js"
+  data-deployment="dep_7k2m4qphr6vt3wzc5nxa7jd2fb"
+  data-target="#site-footer"
+></script>
+```
+
+A script in `<head>` has no place on the page, so `data-target` is required
+there; the widget says so in the console rather than guessing a corner.
+
+The notice lives in an open shadow root: the page's CSS cannot reach it and
+its CSS cannot reach the page. Theme it with custom properties, or reach the
+paragraph with `::part(notice)`:
+
+```css
+[data-article50] {
+  --article50-color: #111;
+  --article50-background: #fafafa;
+  --article50-border: 1px solid #ddd;
+  --article50-border-radius: 6px;
+  --article50-padding: 8px 12px;
+  --article50-font-family: inherit;
+  --article50-font-size: 0.875rem;
+}
+```
+
+If your site sends a Content Security Policy, the widget needs two entries
+— both the same host:
+
+```
+script-src https://your-article50-host
+connect-src https://your-article50-host
+```
+
+It needs no `style-src` exception: its styles go in through a constructable
+stylesheet rather than an inline `<style>`, and no element carries a `style`
+attribute.
 
 Never expose:
 

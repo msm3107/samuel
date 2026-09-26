@@ -34,7 +34,23 @@ const nextConfig: NextConfig = {
   // and nothing depends on the header.
   poweredByHeader: false,
 
-  headers: async () => [{ source: "/:path*", headers: securityHeaders }],
+  headers: async () => [
+    { source: "/:path*", headers: securityHeaders },
+    {
+      // TASK-020: one URL forever, revalidated hourly, so a fix reaches
+      // every installed site within the hour without anyone editing their
+      // page (owner, 2026-09-26). Next serves public/ with no useful
+      // caching otherwise, and this is the one static file whose staleness
+      // a customer would feel.
+      source: "/widget.js",
+      headers: [
+        {
+          key: "Cache-Control",
+          value: "public, max-age=3600, stale-while-revalidate=86400",
+        },
+      ],
+    },
+  ],
 };
 
 export default nextConfig;
