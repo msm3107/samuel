@@ -262,13 +262,19 @@ webhooks.
 - The widget contains no secret, calls no private API, and uses no `eval`,
   `new Function`, `document.write`, inline handler, or remote code load.
 - The widget sets no cookie, reads no `localStorage`, and collects nothing.
-- The widget fails silently and completely: a broken response must never throw
-  into the customer's page or block its rendering.
+- The widget never throws into the customer's page and never blocks its
+  rendering: every failure ends in rendering nothing. It is silent about a
+  deployment with nothing to show, which is an ordinary state and must not
+  be distinguishable from any other. It may write one console line per page
+  load for a mistake in the installation, or for a failure that is not that
+  ordinary answer (owner, 2026-09-26; PR #37 review, note 3) — a broken
+  installation is otherwise indistinguishable from a working one.
 - The endpoint's CORS policy permits reading configuration cross-origin; that
   is a deliberate exception and is not authorization.
 
-**Exit criteria.** Built widget is under 10 KB compressed, measured and
-recorded. A test asserts the response body contains no key beyond the three
+**Exit criteria.** The widget is under 10 KB compressed, measured and
+recorded — of the shipped file itself, since it is deliberately not built
+(TASK-020): 4191 bytes gzipped from 11566 bytes of source. A test asserts the response body contains no key beyond the three
 documented. The widget is verified against a page that already defines
 conflicting global names and CSS.
 

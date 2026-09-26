@@ -597,6 +597,26 @@ It needs no `style-src` exception: its styles go in through a constructable
 stylesheet rather than an inline `<style>`, and no element carries a `style`
 attribute.
 
+Serve `widget.js` from the Article50.js host, not a copy on your own. The
+script asks its own origin for the notice, so a copy asks your server and is
+answered by your 404 page. It says so in the console rather than rendering
+nothing in silence, but it cannot show the notice.
+
+Use one classic script tag per deployment. `type="module"` is not supported:
+the browser hides which script is running from the script itself, and with
+two module installs on one page the notice would be rendered against the
+wrong tag.
+
+**Subresource Integrity is deliberately not supported.** `integrity` needs
+bytes that never change at a URL, and `/widget.js` is one URL whose contents
+are meant to change, so that a fix reaches every installed site within the
+hour without anyone editing their page. Those two cannot both be true here,
+and the fix path was chosen. A customer who adds `integrity` today gets a
+CORS error rather than a silent failure later, which is the better failure,
+but they lose their notice — so do not add it. Read the script instead: it
+ships unminified, uncompiled and commented, exactly as it is in the
+repository.
+
 Never expose:
 
 ```

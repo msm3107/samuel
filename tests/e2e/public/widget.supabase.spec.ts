@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -29,6 +30,19 @@ test.describe.configure({ mode: "serial" });
 /** Pages this run serves, by path. */
 const fixtures = new Map<string, string>();
 
+/**
+ * The customer's server can also serve a copy of `widget.js` and answer the
+ * lookup itself, which is how the "copied the script to our own host"
+ * mistake is reproduced (PR #37 review, note 3).
+ */
+const widgetSource = readFileSync("public/widget.js", "utf8");
+
+let ownAnswer = {
+  status: 404,
+  contentType: "text/html; charset=utf-8",
+  body: "<!doctype html><title>Not found</title><p>Not found</p>",
+};
+
 let server: Server;
 let customer: string;
 let context: BrowserContext;
@@ -44,7 +58,24 @@ test.beforeAll(async ({ browser, baseURL }) => {
   appUrl = baseURL ?? "";
 
   server = createServer((request, response) => {
-    const body = fixtures.get(request.url ?? "");
+    const url = request.url ?? "";
+    if (url === "/widget.js") {
+      response.writeHead(200, {
+        "content-type": "application/javascript; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      response.end(widgetSource);
+      return;
+    }
+    if (url.startsWith("/api/public/disclosure/")) {
+      response.writeHead(ownAnswer.status, {
+        "content-type": ownAnswer.contentType,
+        "cache-control": "no-store",
+      });
+      response.end(ownAnswer.body);
+      return;
+    }
+    const body = fixtures.get(url);
     if (body === undefined) {
       response.writeHead(404).end();
       return;
@@ -143,13 +174,15 @@ type PageSetup = {
   attributes?: Record<string, string>;
   /** Put the script in <head> rather than in the body. */
   inHead?: boolean;
+  /** Where the script tag loads widget.js from. Defaults to the app. */
+  from?: string;
 };
 
 function html(setup: PageSetup): string {
   const attributes = Object.entries(setup.attributes ?? {})
     .map(([name, value]) => `${name}="${value}"`)
     .join(" ");
-  const script = `<script async src="${appUrl}/widget.js" ${attributes}></script>`;
+  const script = `<script async src="${setup.from ?? appUrl}/widget.js" ${attributes}></script>`;
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -209,9 +242,11 @@ test("is served as one URL, revalidated hourly", async () => {
   // 2026-09-26). Next serves public/ with no useful caching otherwise, so
   // this header is set in next.config.ts and asserted here because only a
   // built server can show it.
-  expect(response.headers()["cache-control"]).toBe(
-    "public, max-age=3600, stale-while-revalidate=86400",
-  );
+  //
+  // No `stale-while-revalidate`: with it, a client could serve a copy up
+  // to 25 hours old and this assertion would have pinned a promise the
+  // header did not keep (PR #37 review, note 1).
+  expect(response.headers()["cache-control"]).toBe("public, max-age=3600");
   // The application's own security headers reach it too.
   expect(response.headers()["x-content-type-options"]).toBe("nosniff");
   expect(response.headers()["strict-transport-security"]).toBe(
@@ -329,6 +364,68 @@ test("renders on a page with aggressive but ordinary CSS, and takes no name of t
   expect(complaints).toEqual([]);
   expect(crashes).toEqual([]);
   await page.close();
+});
+
+test("says so when widget.js was copied to another host", async () => {
+  // The endpoint is resolved against this script's own origin, so a copied
+  // widget.js asks the copier's server for the notice and is answered by
+  // their 404 page. Before PR #37's note 3 that was indistinguishable from
+  // a deployment with nothing to show — silence — which is the state a
+  // customer is least equipped to diagnose.
+  const { page, complaints, crashes } = await visit({
+    from: customer,
+    attributes: { "data-deployment": showing },
+  });
+
+  await expect(page.locator("div[data-article50='notice']")).toHaveCount(0);
+  expect(complaints).toHaveLength(1);
+  expect(complaints[0]).toContain("404");
+  expect(complaints[0]).toContain("widget.js must be served from");
+  expect(crashes).toEqual([]);
+  await page.close();
+});
+
+test("stays silent when the answer really is ours and really is empty", async () => {
+  // The same 404, but JSON with an error code, as our endpoint sends. This
+  // is the discriminator: it must not be spoken about.
+  ownAnswer = {
+    status: 404,
+    contentType: "application/json",
+    body: JSON.stringify({ error: { code: "disclosure_not_found" } }),
+  };
+  const { page, complaints, crashes } = await visit({
+    from: customer,
+    attributes: { "data-deployment": showing },
+  });
+
+  await expect(page.locator("div[data-article50='notice']")).toHaveCount(0);
+  expect(complaints).toEqual([]);
+  expect(crashes).toEqual([]);
+  await page.close();
+});
+
+test("says so when the answer is not a notice", async () => {
+  ownAnswer = {
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ hello: true }),
+  };
+  const { page, complaints, crashes } = await visit({
+    from: customer,
+    attributes: { "data-deployment": showing },
+  });
+
+  await expect(page.locator("div[data-article50='notice']")).toHaveCount(0);
+  expect(complaints).toHaveLength(1);
+  expect(complaints[0]).toContain("could not be read");
+  expect(crashes).toEqual([]);
+  await page.close();
+
+  ownAnswer = {
+    status: 404,
+    contentType: "text/html; charset=utf-8",
+    body: "<!doctype html><title>Not found</title><p>Not found</p>",
+  };
 });
 
 test("renders nothing, and says nothing, when the notice is withdrawn", async () => {

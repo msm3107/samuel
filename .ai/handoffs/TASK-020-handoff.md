@@ -47,8 +47,15 @@ before any request; `textContent`, never HTML; `adoptedStyleSheets` rather
 than an inline `<style>`; `credentials: "omit"` and nothing stored; one
 notice per script tag; `version` exposed as an attribute, not shown; an
 evergreen browser floor; the cache header in `next.config.ts`. The contract
-states each one's reason and what was rejected. **Awaiting the owner's
-sign-off.**
+states each one's reason and what was rejected. All twelve accepted on the
+PR #37 review. Accepted by Mikołaj Smoliniec (project owner), 2026-09-26.
+
+On the PR #37 review (owner, 2026-09-26): the cache header now delivers the
+hour it promised (note 1); Subresource Integrity is documented as
+deliberately unsupported (note 2); a broken installation now says so once
+instead of looking like a deployment with nothing to show (note 3); the
+message carries `dir="auto"` (note 4); and the one-install-per-page
+assumption is written down (note 5).
 
 ### Files changed
 
@@ -97,7 +104,69 @@ sign-off.**
 ### Tests
 
 Required by the contract: all covered. 17 assertions against the shipped
-file, and 9 browser tests on a real cross-origin page.
+file, and 12 browser tests on a real cross-origin page — three of them added
+for the review's note 3, including one that asserts the ordinary empty
+answer still says nothing.
+
+### The PR #37 review
+
+Approved with five non-blocking notes. Four changed something.
+
+- **note 1, applied — and it was a real defect.** `/widget.js` carried
+  `stale-while-revalidate=86400`, so a client could serve a copy up to 25
+  hours old, while the config comment, the contract and the browser test all
+  promised "within the hour". The test pinned the misunderstanding instead
+  of catching it. SWR is gone: it is right for the disclosure endpoint,
+  where it trades freshness of content against a burst on the database, and
+  wrong here, where it would trade the speed of the fix path for executable
+  code on other people's sites. The cost is one conditional request per
+  client per hour, answered `304`.
+- **note 2, documented.** Subresource Integrity cannot work here: it needs
+  bytes that never change at a URL, which is the opposite of the
+  one-URL-forever decision that makes the fix path work, and it needs
+  `Access-Control-Allow-Origin` on the script, which it does not have.
+  README §11 tells customers not to add it and why, because a customer who
+  does loses their notice.
+- **note 3, applied.** A copied `widget.js` asks the copier's own server for
+  the notice and is answered by their 404 page — and heard nothing back. The
+  discriminator is exact: our answer is JSON with an error code, theirs is
+  HTML. The widget now says one thing, once per page load, for a `404` that
+  is not ours, any other bad status, a body that is not a notice, and a
+  request that never completes. The ordinary empty answer stays silent.
+  Three browser tests cover it, including one that asserts the real empty
+  answer still says nothing.
+- **note 4, applied.** `dir="auto"` on the paragraph, as the dashboard
+  already does: a message can contain right-to-left text whatever its
+  declared language, and it must not read one way in the dashboard and
+  another on the customer's site.
+- **note 5, documented.** The `currentScript` fallback assumes one install
+  per page; `document.currentScript` is always set for a classic script, so
+  ordinary installs are unaffected. README §11 now asks for one classic
+  script tag per deployment.
+
+### The two stale Phase 6 lines
+
+The review said two lines in `.ai/PLAN.md` Phase 6 were stale without naming
+them. Two could be shown to be wrong, and both are corrected:
+
+- The exit criterion said "**Built** widget is under 10 KB compressed". The
+  widget is deliberately not built; it now records the measurement of the
+  shipped file, 4191 bytes gzipped from 11566 bytes of source.
+- The invariant said the widget "fails silently and completely", which note
+  3 makes untrue on purpose. It now says what is actually guaranteed: never
+  throws, never blocks rendering, always renders nothing on failure, and
+  stays silent about a deployment with nothing to show — while allowing one
+  console line for an installation mistake.
+
+If the review meant two different lines, they need naming: the task list and
+the rate-limiting paragraph were corrected in PR #35, and nothing else in
+Phase 6 reads as stale to me.
+
+### The sign-off list, checked again
+
+Every TASK-010 to TASK-019a contract **and** handoff carries an
+"Accepted by" marker. TASK-020's was the only one open, and this commit
+writes it. The review's standing item is stale for the third time.
 
 ### Recorded: why the widget ships unbuilt
 
@@ -110,10 +179,15 @@ dependency in the path of third-party code. It is still linted, and
 not an untyped corner of a strict codebase; `pnpm typecheck` runs both
 projects.
 
-The budget is what makes this affordable: **3458 bytes gzipped, from 8987
-bytes of source** — about a third of the plan's 10 KB, comments included. A
-transparency product's script should be readable by the person asked to
-embed it.
+The budget is what makes this affordable: **4191 bytes gzipped, from 11566
+bytes of source** — under half the plan's 10 KB, comments included, after
+the review's note 3 added the failure messages. A transparency product's
+script should be readable by the person asked to embed it.
+
+The reviewer added an argument this handoff had not made: shipping unbuilt
+is what made the review possible. For every other file here a reviewer reads
+intent; for this one they read the bytes that will execute on customers'
+sites.
 
 The alternative — TypeScript through esbuild into a committed artifact —
 buys types at the cost of a dependency, an artifact-versus-source gap, and
@@ -162,7 +236,7 @@ pnpm format:check                    pass
 pnpm test                            63 files, 1719 tests, pass
 supabase test db --local             8 files, 290 tests, pass
 vitest --config vitest.supabase.*    32 files, 400 tests, pass
-pnpm test:e2e:supabase               25 tests, pass
+pnpm test:e2e:supabase               28 tests, pass
 next build                           pass
 ```
 

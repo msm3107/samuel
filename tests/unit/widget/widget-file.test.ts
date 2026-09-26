@@ -69,13 +69,19 @@ describe("the shipped widget file", () => {
     const compressed = gzipSync(source, { level: 9 }).byteLength;
 
     // Recorded rather than only asserted, so a review sees the number move.
-    // Measured at the time of writing: 3458 bytes gzipped, from 8987 bytes
-    // of source — about a third of the budget.
-    // The margin is why this file ships unminified and commented: the
-    // readable version costs a fraction of the budget.
+    // Measured after the PR #37 review: 4191 bytes gzipped, from 11566
+    // bytes of source — still under half the budget. The margin is why
+    // this file ships unminified and commented: the readable version costs
+    // a fraction of what it is allowed.
+    //
+    // The compressed figure is the plan's criterion. The source bound below
+    // is only a canary against this file quietly becoming an application;
+    // it was raised from 12000 when note 3 added the failure messages,
+    // because a bound set just above the current size measures nothing but
+    // the last commit.
     expect(compressed).toBeLessThan(BUDGET_BYTES);
     expect({
-      sourceBytes: source.length < 12_000,
+      sourceBytes: source.length < 16_000,
       compressedUnderBudget: compressed < BUDGET_BYTES,
       compressedUnderHalfBudget: compressed < BUDGET_BYTES / 2,
     }).toEqual({

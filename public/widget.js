@@ -32,6 +32,11 @@
    * `document.currentScript` is this script while it is executing, async
    * or not — but it is null for module scripts and inside callbacks, so
    * the last tag carrying a deployment identifier is the fallback.
+   *
+   * That fallback assumes one install per page. A page with two
+   * `type="module"` installs would render one notice, against the last
+   * tag's identifier and position; use a classic script tag for each, as
+   * the documented installation does.
    * @returns {HTMLScriptElement | null}
    */
   function findScript() {
@@ -156,6 +161,10 @@
     paragraph.className = "notice";
     paragraph.setAttribute("part", "notice");
     paragraph.setAttribute("lang", notice.language);
+    // As the dashboard renders the same stored text: none of the supported
+    // languages is right-to-left, but a message may still contain
+    // right-to-left text, and it should read the same in both places.
+    paragraph.setAttribute("dir", "auto");
     // Text, never markup. This is the last place a stored message could
     // have become HTML, and it does not.
     paragraph.textContent = notice.message;
@@ -187,6 +196,58 @@
       language: notice.language,
       message: notice.message,
     };
+  }
+
+  /**
+   * Our answer for a deployment with nothing to show is JSON carrying an
+   * error code; somebody else's 404 is an HTML page. That is enough to
+   * tell "there is no notice to show" from "this request did not reach
+   * us at all" — which is what a copied `widget.js` produces, because the
+   * endpoint is resolved against this script's own origin.
+   * @param {Response} response
+   */
+  function isOurAnswer(response) {
+    const type = response.headers.get("content-type");
+    return type !== null && type.indexOf("application/json") !== -1;
+  }
+
+  const UNREADABLE =
+    "The notice could not be read, so nothing was rendered. If this persists, the deployment identifier may belong to a different Article50.js host.";
+
+  /**
+   * @param {Response} response
+   * @param {string} host
+   * @returns {{ version: number, language: string, message: string } | null | Promise<{ version: number, language: string, message: string } | null>}
+   */
+  function interpret(response, host) {
+    if (response.ok) {
+      return response.json().then(
+        function (body) {
+          const notice = readNotice(body);
+          if (!notice) {
+            explain(UNREADABLE);
+          }
+          return notice;
+        },
+        function () {
+          explain(UNREADABLE);
+          return null;
+        },
+      );
+    }
+    // The ordinary answer: unknown, archived, or a notice withdrawn. Not an
+    // error, and it says nothing.
+    if (response.status === 404 && isOurAnswer(response)) {
+      return null;
+    }
+    explain(
+      "The notice could not be fetched: " +
+        host +
+        " answered " +
+        response.status +
+        ". widget.js must be served from the Article50.js host, because it asks that same host for the notice.",
+    );
+    return null;
   }
 
   function start() {
@@ -230,26 +291,37 @@
     // tag must not start a second request either.
     script.dataset[RENDERED] = "true";
 
+    const host = new URL(endpoint).host;
+
     fetch(endpoint, {
       // Nothing about your visitor is sent: no cookie, no credential.
       credentials: "omit",
       mode: "cors",
     })
       .then(function (response) {
-        // 404 is the ordinary answer for a deployment with nothing to show
-        // — unknown, archived, or a notice that was withdrawn. It is not an
-        // error and says nothing in the console.
-        return response.ok ? response.json() : null;
-      })
-      .then(function (body) {
-        const notice = body === null ? null : readNotice(body);
-        if (notice) {
-          render(place, notice);
-        }
+        return interpret(response, host);
       })
       .catch(function () {
-        // A network failure, a refused request, an unreadable body: the
-        // page carries on as though we were never here.
+        // The request never completed: the visitor is offline, the host is
+        // down, or its answer was refused by the browser because widget.js
+        // is being served from somewhere else.
+        explain(
+          "The notice could not be fetched from " +
+            host +
+            ": the request did not complete. The visitor may be offline, or the request may have been refused by the browser.",
+        );
+        return null;
+      })
+      .then(function (notice) {
+        if (!notice) {
+          return;
+        }
+        try {
+          render(place, notice);
+        } catch {
+          // Nothing this script does is worth breaking somebody else's
+          // page for, and that holds after the request too.
+        }
       });
   }
 

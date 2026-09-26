@@ -42,13 +42,16 @@ const nextConfig: NextConfig = {
       // page (owner, 2026-09-26). Next serves public/ with no useful
       // caching otherwise, and this is the one static file whose staleness
       // a customer would feel.
+      //
+      // Deliberately no `stale-while-revalidate` (PR #37 review, note 1).
+      // It is right for the disclosure endpoint, where it trades freshness
+      // of content against a burst on the database; here it would trade
+      // the speed of the fix path for executable code on other people's
+      // sites, and an hour would quietly become a day. The cost is one
+      // conditional request per client per hour, answered 304 — this is a
+      // static file, not a query.
       source: "/widget.js",
-      headers: [
-        {
-          key: "Cache-Control",
-          value: "public, max-age=3600, stale-while-revalidate=86400",
-        },
-      ],
+      headers: [{ key: "Cache-Control", value: "public, max-age=3600" }],
     },
   ],
 };

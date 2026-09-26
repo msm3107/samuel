@@ -77,15 +77,17 @@ Chosen by Mikołaj Smoliniec (project owner), 2026-09-26:
 
 ## Proposed by the implementer
 
-Awaiting the owner's sign-off.
+All twelve accepted on the PR #37 review. Accepted by Mikołaj Smoliniec
+(project owner), 2026-09-26.
 
 1. **No build step: `public/widget.js` is hand-written, readable
    JavaScript.** What the customer's browser executes is exactly what is in
    the repository — no bundler in the path of the one artifact that runs on
    other people's sites, and no committed build output that can drift from
-   its source. The compressed budget is met with room to spare, and the
-   comments a reader of a transparency product's script might want cost
-   almost nothing once gzipped. Rejected: TypeScript through esbuild into a
+   its source. The compressed budget is met with room to spare — 4191 bytes
+   gzipped of the 10 KB allowed — and the comments a reader of a
+   transparency product's script might want cost almost nothing once
+   gzipped. Rejected: TypeScript through esbuild into a
    committed artifact, which buys types at the cost of a new build-time
    dependency, an artifact-versus-source gap, and a test whose only job is
    to close that gap again.
@@ -178,3 +180,85 @@ Awaiting the owner's sign-off.
   containing markup appears as text; no cookie or storage is written.
 - Browser: a script in `<head>` with no `data-target` renders nothing and
   says why once.
+
+## Amendment: the PR #37 review
+
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-26. Five
+non-blocking notes; three changed the widget, one changed its cache header,
+one is documented.
+
+- **Note 1, the cache header did not deliver the hour it promised.
+  Applied.** `/widget.js` was served
+  `public, max-age=3600, stale-while-revalidate=86400`, so a client could
+  serve a copy stale for a day past expiry — while the config comment, this
+  contract and the browser test all said a fix reaches every installed site
+  "within the hour". The test pinned the misunderstanding rather than
+  catching it. `stale-while-revalidate` is gone: it is right for the
+  disclosure endpoint, where it trades freshness of content against a burst
+  on the database, and wrong here, where it would trade the speed of the fix
+  path for executable code on other people's sites. Cost: one conditional
+  request per client per hour, answered `304` — this is a static file, not a
+  query. Rejected: keeping it and correcting every claim to about a day,
+  which is a worse property to have chosen on purpose.
+- **Note 2, Subresource Integrity, documented as unsupported.** `integrity`
+  needs bytes that never change at a URL, which is the opposite of the
+  one-URL-forever decision that makes note 1's fix path work; it also needs
+  `Access-Control-Allow-Origin` on the script, which it does not have. Both
+  cannot be true at once and the fix path was chosen. README §11 now says so
+  and tells customers not to add it, because a customer who does loses their
+  notice — to a CORS error, which at least fails immediately rather than
+  silently later. A versioned URL alongside the evergreen one, for customers
+  who want to pin and accept updating it, is a later question rather than a
+  gap here.
+- **Note 3, a broken installation was indistinguishable from a working one.
+  Applied.** The `404` silence is right and stays: a deployment with nothing
+  to show is an ordinary state. But the endpoint is resolved against the
+  script's own origin, so a customer who copies `widget.js` to their own
+  host asks their own server for the notice, gets their 404 page, and hears
+  nothing — an instinct the "read the source" framing actively invites. The
+  discriminator is exact: our answer is JSON carrying an error code, theirs
+  is an HTML page. The widget now says one thing, once per page load, for a
+  `404` that is not ours, any other bad status, a body that is not a notice,
+  and a request that never completes. Cost, accepted: during an outage of
+  ours, customers' consoles carry a line per page load on their own sites.
+- **Note 4, the message had no direction of its own. Applied.** `dir="auto"`
+  on the paragraph, as the dashboard already renders the same stored text.
+  None of the 24 languages is right-to-left, but a message may contain
+  right-to-left text whatever its declared language, and it should not read
+  one way in the dashboard and another on the customer's site — with the
+  public seeing the second.
+- **Note 5, the `currentScript` fallback assumes one install per page.
+  Documented.** `document.currentScript` is always set for a classic script,
+  so ordinary installs are unaffected; two `type="module"` installs would
+  render one notice against the wrong tag. Written into the file's comment
+  and into README §11, which now asks for one classic script tag per
+  deployment. No code: the cost of supporting it is real and the case is
+  not one the documented installation produces.
+
+The review also confirmed that the message is `textContent` and nothing
+else, that no global is defined or written, that the whole entry point being
+wrapped is what makes a `data-target` of `"["` harmless, that nothing about
+the visitor leaves their browser, that the endpoint comes from the script's
+own URL, that the rendered marker is set before the request rather than
+after, and that the stylesheet route avoids needing a CSP exception while
+saying honestly that its fallback degrades to unstyled rather than
+equivalent.
+
+### Recorded: what the unbuilt decision bought
+
+The reviewer made an argument for it that this contract did not: shipping
+unbuilt is what made the review possible. For every other file in this
+repository a reviewer reads intent; for this one they read the bytes that
+will execute on customers' sites. On the single file that runs in third
+parties' pages, that difference is the point.
+
+### Out of contract
+
+Recorded under the owner's standing permission to edit outside the Allowed
+files (2026-09-24):
+
+- `.ai/PLAN.md`: Phase 6's exit criterion said "built widget", which this
+  task made untrue, and its silence invariant did not allow the console
+  lines note 3 adds. Both corrected. The review said two Phase 6 lines were
+  stale without naming them; these are the two that could be shown to be
+  wrong.
