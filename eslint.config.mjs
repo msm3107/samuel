@@ -15,6 +15,26 @@ export default tseslint.config(
     ],
   },
   js.configs.recommended,
+  {
+    // TASK-020: the public widget ships unbuilt and runs in somebody else's
+    // page, so it is a plain browser script rather than part of the
+    // application's module graph. Linted like everything else; its types
+    // are checked by tsconfig.widget.json.
+    files: ["public/widget.js"],
+    languageOptions: {
+      ecmaVersion: 2020,
+      sourceType: "script",
+      globals: {
+        CSSStyleSheet: "readonly",
+        Document: "readonly",
+        HTMLScriptElement: "readonly",
+        URL: "readonly",
+        console: "readonly",
+        document: "readonly",
+        fetch: "readonly",
+      },
+    },
+  },
   ...next,
   ...nextCoreWebVitals,
   ...nextTypescript,

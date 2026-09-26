@@ -544,10 +544,78 @@ Example installation:
 ```html
 <script
   async
-  src="https://cdn.article50.dev/widget.js"
+  src="https://your-article50-host/widget.js"
   data-deployment="dep_7k2m4qphr6vt3wzc5nxa7jd2fb"
 ></script>
 ```
+
+`widget.js` is served from the application's own origin — the host you sign
+in to — not a separate CDN domain (owner, 2026-09-26). One host to allow, and
+the widget finds the configuration endpoint from its own script URL, so
+nothing else is configured.
+
+The notice renders where the script tag is. To put it somewhere else, name a
+container:
+
+```html
+<script
+  async
+  src="https://your-article50-host/widget.js"
+  data-deployment="dep_7k2m4qphr6vt3wzc5nxa7jd2fb"
+  data-target="#site-footer"
+></script>
+```
+
+A script in `<head>` has no place on the page, so `data-target` is required
+there; the widget says so in the console rather than guessing a corner.
+
+The notice lives in an open shadow root: the page's CSS cannot reach it and
+its CSS cannot reach the page. Theme it with custom properties, or reach the
+paragraph with `::part(notice)`:
+
+```css
+[data-article50] {
+  --article50-color: #111;
+  --article50-background: #fafafa;
+  --article50-border: 1px solid #ddd;
+  --article50-border-radius: 6px;
+  --article50-padding: 8px 12px;
+  --article50-font-family: inherit;
+  --article50-font-size: 0.875rem;
+}
+```
+
+If your site sends a Content Security Policy, the widget needs two entries
+— both the same host:
+
+```
+script-src https://your-article50-host
+connect-src https://your-article50-host
+```
+
+It needs no `style-src` exception: its styles go in through a constructable
+stylesheet rather than an inline `<style>`, and no element carries a `style`
+attribute.
+
+Serve `widget.js` from the Article50.js host, not a copy on your own. The
+script asks its own origin for the notice, so a copy asks your server and is
+answered by your 404 page. It says so in the console rather than rendering
+nothing in silence, but it cannot show the notice.
+
+Use one classic script tag per deployment. `type="module"` is not supported:
+the browser hides which script is running from the script itself, and with
+two module installs on one page the notice would be rendered against the
+wrong tag.
+
+**Subresource Integrity is deliberately not supported.** `integrity` needs
+bytes that never change at a URL, and `/widget.js` is one URL whose contents
+are meant to change, so that a fix reaches every installed site within the
+hour without anyone editing their page. Those two cannot both be true here,
+and the fix path was chosen. A customer who adds `integrity` today gets a
+CORS error rather than a silent failure later, which is the better failure,
+but they lose their notice — so do not add it. Read the script instead: it
+ships unminified, uncompiled and commented, exactly as it is in the
+repository.
 
 Never expose:
 

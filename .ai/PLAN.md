@@ -262,19 +262,27 @@ webhooks.
 - The widget contains no secret, calls no private API, and uses no `eval`,
   `new Function`, `document.write`, inline handler, or remote code load.
 - The widget sets no cookie, reads no `localStorage`, and collects nothing.
-- The widget fails silently and completely: a broken response must never throw
-  into the customer's page or block its rendering.
+- The widget never throws into the customer's page and never blocks its
+  rendering: every failure ends in rendering nothing. It is silent about a
+  deployment with nothing to show, which is an ordinary state and must not
+  be distinguishable from any other. It may write one console line per page
+  load for a mistake in the installation, or for a failure that is not that
+  ordinary answer (owner, 2026-09-26; PR #37 review, note 3) — a broken
+  installation is otherwise indistinguishable from a working one.
 - The endpoint's CORS policy permits reading configuration cross-origin; that
   is a deliberate exception and is not authorization.
 
-**Exit criteria.** Built widget is under 10 KB compressed, measured and
-recorded. A test asserts the response body contains no key beyond the three
+**Exit criteria.** The widget is under 10 KB compressed, measured and
+recorded — of the shipped file itself, since it is deliberately not built
+(TASK-020): 4191 bytes gzipped from 11566 bytes of source. A test asserts the response body contains no key beyond the three
 documented. The widget is verified against a page that already defines
 conflicting global names and CSS.
 
-**Decision required before starting.** Where `widget.js` is served from — the
-application origin or a CDN domain. This changes the CSP the customer needs,
-the cache strategy, and the deployment pipeline. See Open decisions.
+**Decision taken before starting.** `widget.js` is served from the
+application origin (owner, 2026-09-26; open decision 1, TASK-020). The
+customer allows one host in `script-src` and `connect-src`, the script is one
+URL revalidated hourly, and the widget finds the configuration endpoint from
+its own script URL.
 
 ---
 
@@ -511,11 +519,17 @@ consume it. A second implementation of any of them is a review rejection.
 ## Open decisions
 
 These block the phases named. Each needs a human answer; none should be
-resolved by an agent picking a default.
+resolved by an agent picking a default. A decided one keeps its number and
+records the answer, so a reader of an old handoff still finds it.
 
-1. **Widget hosting origin** — application origin or a separate CDN domain.
-   Blocks Phase 6. Affects CSP guidance given to customers, cache invalidation
-   on disclosure changes, and whether the configuration endpoint needs CORS.
+1. **Widget hosting origin** — ~~application origin or a separate CDN
+   domain~~. **Decided: the application origin** (owner, 2026-09-26;
+   TASK-020). `/widget.js` is served from the host the dashboard is on, so a
+   customer allows one origin in both `script-src` and `connect-src`, and the
+   widget finds the configuration endpoint from its own script URL. A CDN
+   domain was rejected: it does not exist, it would have blocked the phase on
+   infrastructure, and it would make customers allow two hosts. Moving to one
+   later means baking the API origin in at build time.
 2. **Evidence retention policy** — how long verification checks survive
    organization deletion, and what "delete my data" means when the evidence is
    the product. Blocks Phase 13, and should be decided before Phase 7 writes
