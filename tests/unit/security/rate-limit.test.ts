@@ -182,6 +182,9 @@ describe("consumeRateLimit", () => {
       sessionRefreshNetwork: [30, 300, 0],
       sessionRefreshGlobal: [100, 300, 0],
       sessionRefreshCeilingAlert: [1, 300, 0],
+      publicDisclosureNetwork: [300, 300, 0],
+      publicDisclosureGlobal: [20_000, 300, 0],
+      publicDisclosureCeilingAlert: [1, 300, 0],
     });
   });
 });

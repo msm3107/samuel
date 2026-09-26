@@ -303,6 +303,15 @@ export const config = {
     // widget is deliberately served without dashboard security headers.
     // Anchored, so only `/widget`, `/widget/…` and `/widget.js` are excluded —
     // not every path that merely starts with "widget".
-    "/((?!_next/static/|_next/image|favicon\\.ico$|widget$|widget/|widget\\.js$).*)",
+    //
+    // `/api/public/…` is excluded for a different reason (TASK-019a): this
+    // proxy exists to refresh sessions and stamp HTML security headers, and
+    // on a surface with no session at all it would build a session client
+    // per request — which makes auth-js refresh in the background and spends
+    // `sessionRefreshNetwork` buckets — while making the response depend on
+    // cookies that a shared cache must never see. The public route sets its
+    // own `X-Content-Type-Options`. Anchored too, so `/api/publications`
+    // keeps its headers.
+    "/((?!_next/static/|_next/image|favicon\\.ico$|widget$|widget/|widget\\.js$|api/public/).*)",
   ],
 };
