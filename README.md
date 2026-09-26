@@ -361,12 +361,23 @@ deployment_id
 disclosure_id
 status
 checked_at
+check_window
 http_status
 widget_detected
 disclosure_version
 failure_code
 metadata
+payload_hash
+previous_record_hash
 ```
+
+`check_window` is the start of the schedule window a check belongs to, with
+`unique (deployment_id, check_window)`: a cron that fires twice cannot write
+two rows for one window (TASK-022). The two hash columns are §20's chain,
+created nullable and unpopulated.
+
+`status` is `success` or `failure`; `failure_code` carries the reason and is
+null exactly when the status is success.
 
 Never mutate an existing verification check to change historical evidence.
 
@@ -928,14 +939,13 @@ Browser-based verification may be added later in an isolated execution environme
 
 Use deterministic machine-readable codes.
 
-Example:
-
 ```
-SUCCESS
 DNS_ERROR
 CONNECTION_TIMEOUT
+TOTAL_TIMEOUT
 HTTP_ERROR
 REDIRECT_BLOCKED
+TOO_MANY_REDIRECTS
 PRIVATE_NETWORK_BLOCKED
 RESPONSE_TOO_LARGE
 WIDGET_NOT_FOUND
@@ -943,6 +953,19 @@ DEPLOYMENT_ID_MISMATCH
 DISCLOSURE_VERSION_MISMATCH
 UNKNOWN_ERROR
 ```
+
+This is the stored set (TASK-022), and it differs from the sketch this
+section began as in two ways.
+
+`SUCCESS` is **not** among them. `status` already says a check succeeded, and
+a second encoding of one fact is a second thing that can be wrong; a stored
+code therefore always means a failure, and the database enforces that
+`failure_code` is null exactly when `status` is `success`.
+
+`TOTAL_TIMEOUT` and `TOO_MANY_REDIRECTS` are added, because Phase 7 requires
+each exceeded bound to map to its own code: a connection that never opened
+is a different fact from one that opened and never finished, and a redirect
+chain that was too long is a different fact from one that was blocked.
 
 Do not rely on human-readable strings for application logic.
 

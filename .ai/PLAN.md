@@ -311,7 +311,7 @@ is the only place those can be told apart for the person entitled to know.
 
 ---
 
-## Phase 7 — Verification service
+## Phase 7 — Verification service — **in progress**
 
 **Goal.** A scheduled job checks whether the disclosure is actually present.
 
@@ -344,7 +344,28 @@ compliance failure the customer discovers months later.
 **Note on evidence integrity.** `payload_hash` and `previous_record_hash`
 columns are created nullable in TASK-022 and left unpopulated. §20 does not
 require the chain for launch, but adding the columns later means a migration
-across evidence rows that customers are already relying on.
+across evidence rows that customers are already relying on. Done, with a
+check constraint on each: 64 lowercase hex characters if present.
+
+**Decisions taken in TASK-022** (owner, 2026-09-26). `status` says success
+or failure and `failure_code` carries the reason, null exactly when the
+status is success — so `SUCCESS` is not a stored code, and §19 is amended to
+say why. Idempotency is the database's: `unique (deployment_id,
+check_window)`, so a cron that fires twice cannot write two rows for one
+window. A deployment whose AI system has published nothing, or whose notice
+is turned off, is not checked at all, which is why `disclosure_id` is not
+null. `metadata` holds facts about the check and never content fetched from
+the customer's page (§34).
+
+**Found in TASK-022, and it changes an existing guarantee for the better.**
+`verification_checks` holds foreign keys into `deployments` and
+`disclosures`, so Postgres now refuses a bare `truncate` of either with
+`0A000` before their own no-truncate triggers can run. The protection is
+unchanged in substance and stronger in form — two independent refusals — but
+their pgTAP files had pinned the trigger's error code. Both now assert the
+foreign-key refusal _and_ that `truncate ... cascade` still meets the
+table's own trigger, so the guarantee cannot come to rest on another table
+continuing to exist.
 
 ---
 
