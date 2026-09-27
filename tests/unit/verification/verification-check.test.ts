@@ -6,8 +6,10 @@ import { describe, expect, it } from "vitest";
 import {
   serializeVerificationCheck,
   VERIFICATION_FAILURE_CODES,
+  VERIFICATION_METADATA_KEYS,
   VERIFICATION_STATUSES,
   verificationCheckRowSchema,
+  verificationMetadataSchema,
 } from "@/features/verification/verification-check";
 
 /**
@@ -51,6 +53,35 @@ function databaseFailureCodes(): string[] {
     .split(",")
     .map((entry) => entry.trim().replace(/^'|'$/g, ""))
     .filter((entry) => entry.length > 0);
+}
+
+/**
+ * The key list in the latest migration that defines the whitelist. SQL
+ * comments are stripped first, so a comment that happens to contain a quote
+ * cannot be read as a key.
+ */
+function databaseMetadataKeys(): string[] {
+  const pattern =
+    /verification_checks_metadata_keys_check check \(([\s\S]*?)\s\);/g;
+  const blocks = readdirSync(MIGRATIONS_DIRECTORY)
+    .filter((file) => file.endsWith(".sql"))
+    .sort()
+    .flatMap((file) => [
+      ...readFileSync(join(MIGRATIONS_DIRECTORY, file), "utf8").matchAll(
+        pattern,
+      ),
+    ])
+    .map((match) => match[1] ?? "");
+  expect(blocks.length).toBeGreaterThan(0);
+
+  const sql = (blocks.at(-1) ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/--.*$/, ""))
+    .join(" ");
+  // Only the keys the array names. The `jsonb_typeof(metadata) <> 'object'`
+  // guard in front of it is a type check, not a key.
+  const keys = /array\[([^\]]*)\]/.exec(sql)?.[1] ?? "";
+  return [...keys.matchAll(/'([a-z_]+)'/g)].map((match) => match[1] ?? "");
 }
 
 const row = {
@@ -177,5 +208,52 @@ describe("a verification check row", () => {
     expect(keys).not.toContain("organizationId");
     expect(keys).not.toContain("disclosureId");
     expect(keys).not.toContain("metadata");
+  });
+});
+
+describe("VERIFICATION_METADATA_KEYS", () => {
+  it("is exactly the whitelist the database enforces", () => {
+    // PR #39 review, note 4: `metadata`'s promise stopped being a
+    // code-review promise in TASK-023. Both directions matter — a key the
+    // schema knows that the constraint refuses would fail every write, and a
+    // key the constraint allows that the schema has never heard of is a key
+    // nobody reviewed.
+    expect([...VERIFICATION_METADATA_KEYS]).toEqual(
+      databaseMetadataKeys().sort(),
+    );
+  });
+
+  it("refuses a key nobody put on the list", () => {
+    const parsed = verificationMetadataSchema.safeParse({
+      scheme: "https",
+      page_excerpt: "<html>…</html>",
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("accepts every key the fetch can produce, and an empty object", () => {
+    expect(
+      verificationMetadataSchema.safeParse({
+        scheme: "http",
+        https_failed: true,
+        redirects: 2,
+        final_host: "www.example.com",
+        response_bytes: 4096,
+        duration_ms: 812,
+        content_type: "text/html; charset=utf-8",
+      }).success,
+    ).toBe(true);
+    // A check that failed at DNS observed none of them.
+    expect(verificationMetadataSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("refuses a row whose metadata carries an unknown key", () => {
+    expect(
+      verificationCheckRowSchema.safeParse({
+        ...row,
+        metadata: { redirects: 1, body: "<html>" },
+      }).success,
+    ).toBe(false);
   });
 });

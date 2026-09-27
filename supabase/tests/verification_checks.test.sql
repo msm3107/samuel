@@ -8,7 +8,7 @@
 -- everything rolls back.
 begin;
 
-select plan(30);
+select plan(34);
 
 -- Fixtures ------------------------------------------------------------------------
 
@@ -239,12 +239,66 @@ select throws_ok(
 
 select throws_ok(
   $$ insert into public.verification_checks
-       (organization_id, deployment_id, disclosure_id, status, check_window, metadata)
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected, metadata)
      values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
-             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-01', '[]'::jsonb) $$,
+             '00000000-0000-4000-8000-000000220d01', 'success', '2000-01-01', 200, true,
+             '[]'::jsonb) $$,
   '23514',
   null,
   'metadata that is not an object is refused'
+);
+
+-- The key whitelist (TASK-023; PR #39 review, note 4) ------------------------------
+--
+-- Every row here is a coherent success, so the only constraint left that can
+-- refuse it is the one being named. A row that also contradicted its own
+-- observations would raise 23514 either way and prove nothing.
+
+select throws_ok(
+  $$ insert into public.verification_checks
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected, metadata)
+     values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
+             '00000000-0000-4000-8000-000000220d01', 'success', '2001-01-01', 200, true,
+             '{"page_excerpt": "<html>hello</html>"}'::jsonb) $$,
+  '23514',
+  null,
+  'a metadata key nobody put on the whitelist is refused'
+);
+
+select throws_ok(
+  $$ insert into public.verification_checks
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected, metadata)
+     values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
+             '00000000-0000-4000-8000-000000220d01', 'success', '2001-01-02', 200, true,
+             '{"scheme": "https", "visitor_ip": "203.0.113.7"}'::jsonb) $$,
+  '23514',
+  null,
+  'one unknown key among allowed ones is still refused'
+);
+
+select lives_ok(
+  $$ insert into public.verification_checks
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected, metadata)
+     values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
+             '00000000-0000-4000-8000-000000220d01', 'success', '2001-01-03', 200, true,
+             '{"scheme": "https", "https_failed": false, "redirects": 2,
+                "final_host": "www.example.com", "response_bytes": 40960,
+                "duration_ms": 812, "content_type": "text/html"}'::jsonb) $$,
+  'every key the fetch produces is accepted'
+);
+
+select lives_ok(
+  $$ insert into public.verification_checks
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        failure_code)
+     values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
+             '00000000-0000-4000-8000-000000220d01', 'failure', '2001-01-04',
+             'CONNECTION_FAILED') $$,
+  'CONNECTION_FAILED is a stored code (TASK-023)'
 );
 
 -- The reserved integrity columns (README §20) --------------------------------------

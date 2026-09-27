@@ -282,8 +282,126 @@ export function validateVerificationTarget(
   return { ok: true, hostname };
 }
 
+/**
+ * Why a redirect hop was refused (TASK-023). Deliberately **not**
+ * `VERIFICATION_TARGET_FAILURES`: that list is a registration vocabulary,
+ * with a user-facing `hostname_*` message for every code
+ * (`features/deployments/deployment.ts`), and a person registering a name
+ * can never meet a downgrade or a malformed `Location`. Two audiences, two
+ * vocabularies.
+ *
+ * These reasons are for a log and for a test. What gets stored is the §19
+ * code beside them.
+ */
+export const REDIRECT_REFUSALS = [
+  "INVALID_LOCATION",
+  "UNSUPPORTED_SCHEME",
+  "SCHEME_DOWNGRADE",
+  "EMBEDDED_CREDENTIALS",
+  "PRIVATE_NETWORK_BLOCKED",
+  "IP_ADDRESS_NOT_ALLOWED",
+  "PORT_NOT_ALLOWED",
+] as const;
+
+export type RedirectRefusal = (typeof REDIRECT_REFUSALS)[number];
+
+export type RedirectDecision =
+  | { ok: true; url: URL }
+  | {
+      ok: false;
+      /** The README §19 code this becomes in the evidence row. */
+      code: "REDIRECT_BLOCKED" | "PRIVATE_NETWORK_BLOCKED";
+      reason: RedirectRefusal;
+    };
+
+/**
+ * Whether the verifier may follow a `Location`, and the absolute URL to
+ * request if so (README §17, "revalidate redirect targets"). Every check
+ * `validateVerificationTarget` makes about a host applies here too — scheme,
+ * credentials, IP literals, reserved names, ports — with two deliberate
+ * differences:
+ *
+ * - **A hop may carry a path.** `https://example.com/en/` is an ordinary
+ *   redirect. The path rule exists at registration so nobody believes one
+ *   page is monitored; it has no meaning for a hop.
+ * - **A hop may not downgrade.** `https:` to `http:` is refused, because an
+ *   honest site never needs it and it is exactly the step that turns a
+ *   checked page into one an attacker on the path can write (owner's
+ *   decision, 2026-09-27).
+ *
+ * A `Location` is resolved against the URL it came from, as a browser and
+ * `fetch` both do, and it is not put through the invisible-character check:
+ * nobody reads a redirect, so nothing can be disguised to a person, and
+ * refusing a stray unencoded space would fail honest sites over a header
+ * they did not write by hand.
+ */
+export function validateRedirectTarget(
+  location: string,
+  from: URL,
+): RedirectDecision {
+  if (location.length === 0 || location.length > MAX_INPUT_LENGTH) {
+    return blocked("INVALID_LOCATION");
+  }
+  let url: URL;
+  try {
+    url = new URL(location, from);
+  } catch {
+    return blocked("INVALID_LOCATION");
+  }
+  if (!ALLOWED_SCHEMES.has(url.protocol)) {
+    return blocked("UNSUPPORTED_SCHEME");
+  }
+  if (from.protocol === "https:" && url.protocol === "http:") {
+    return blocked("SCHEME_DOWNGRADE");
+  }
+  if (url.username !== "" || url.password !== "") {
+    return blocked("EMBEDDED_CREDENTIALS");
+  }
+
+  const host = url.hostname;
+  const address = host.startsWith("[") ? host.slice(1, -1) : host;
+  if (isIPv4(address) || isIPv6(address)) {
+    // A public IP literal is refused as well as a private one: an honest
+    // site does not redirect its home page to a bare address, no
+    // certificate can be checked against one, and the address rules are all
+    // that stand between a hop and internal infrastructure.
+    return blocked(addressFailure(address));
+  }
+  const name = host.endsWith(".") ? host.slice(0, -1) : host;
+  if (RESERVED_TOP_LEVEL_NAMES.has(name.slice(name.lastIndexOf(".") + 1))) {
+    return blocked("PRIVATE_NETWORK_BLOCKED");
+  }
+  if (nameShape(host) === null) {
+    return blocked("INVALID_LOCATION");
+  }
+  // The parser drops a scheme's default port, so anything left is not one.
+  if (url.port !== "") {
+    return blocked("PORT_NOT_ALLOWED");
+  }
+  return { ok: true, url };
+}
+
+/**
+ * A refusal, with the code that will be stored beside the reason. Only a hop
+ * into space the verifier may not reach is `PRIVATE_NETWORK_BLOCKED`;
+ * everything else about a hop is `REDIRECT_BLOCKED`, because that is what
+ * happened — the redirect was not followed.
+ */
+function blocked(reason: RedirectRefusal): RedirectDecision {
+  return {
+    ok: false,
+    code:
+      reason === "PRIVATE_NETWORK_BLOCKED"
+        ? "PRIVATE_NETWORK_BLOCKED"
+        : "REDIRECT_BLOCKED",
+    reason,
+  };
+}
+
 /** Every IP address is refused; a non-public one says why. */
-function addressFailure(address: string): VerificationTargetFailure {
+function addressFailure(
+  address: string,
+): "IP_ADDRESS_NOT_ALLOWED" | "PRIVATE_NETWORK_BLOCKED" {
   return isPublicAddress(address)
     ? "IP_ADDRESS_NOT_ALLOWED"
     : "PRIVATE_NETWORK_BLOCKED";
