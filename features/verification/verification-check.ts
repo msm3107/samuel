@@ -4,10 +4,10 @@ import { z } from "zod";
  * A verification check (TASK-022): append-only evidence that a deployment
  * was checked (README §18-§20).
  *
- * Nothing imports this yet. TASK-023 fetches, TASK-024 maps a failure to
- * one of the codes below, TASK-025 schedules. The schema landed first,
- * because a migration adding something the application reads ships before
- * the code that reads it.
+ * No row is written yet. TASK-023 fetches, TASK-024 maps what it finds on the
+ * page to one of the codes below, TASK-025 schedules and inserts. The schema
+ * landed first, because a migration adding something the application reads
+ * ships before the code that reads it.
  *
  * The lists here are written out a second time in
  * `supabase/migrations/20260926120000_verification_checks.sql`; the
@@ -73,14 +73,58 @@ export type VerificationFailureCode =
  * what stopped page content getting in (PR #39 review, note 4).
  *
  * Every key is optional, because a check that failed at DNS observed none of
- * them. TASK-024 adds the inspection keys — which matcher failed, and what
- * it looked for — in its own migration.
+ * them. TASK-024 added the inspection keys — `charset`, `widget_tags` and
+ * `widget_reason` — in its own migration, as TASK-023 said it would.
  *
  * The reviewer's own limitation is worth repeating here, where a future
  * writer will meet it: a whitelist bounds keys, not values. Nothing stops a
  * caller putting a page excerpt in `content_type`; what it stops is a new
  * key nobody reviewed.
  */
+/**
+ * Why no installation of ours was found, or why the one found was not this
+ * deployment's (TASK-024).
+ *
+ * Exactly PR #40 note 2's argument, one task later: `WIDGET_NOT_FOUND` over
+ * "you have no tag", "your tag loads a copy from your own domain" and "your
+ * home page is a PDF" is one stored code over three different fixes, and this
+ * is the failure class a customer must act on. §19 governs `failure_code`, and
+ * three more codes there would force every consumer of that list to handle a
+ * detail about one of them.
+ *
+ * Declared here rather than in `inspect-page.ts`, and this is the arrangement
+ * `redirect_reason` could not have: that vocabulary belongs to
+ * `lib/security/verification-target`, which is `server-only`, so it had to be
+ * written out a second time with a test keeping the two equal. This one is
+ * produced by a module written in the same task, so the row shape can own it —
+ * and what a row may store is already declared here, `VERIFICATION_FAILURE_CODES`
+ * included. One list, no second copy to drift.
+ *
+ * Privacy-safe by construction: seven fixed strings, no customer data.
+ */
+export const WIDGET_REASONS = [
+  /** The body was not HTML, so nothing was scanned. */
+  "NOT_HTML",
+  /** No script tag on the page mentions Article50.js at all. */
+  "NO_WIDGET_TAG",
+  /**
+   * A tag loads `widget.js` from a host that is not this installation. The
+   * widget finds its configuration endpoint from its own script URL, so a copy
+   * asks the customer's own host for a notice and renders nothing.
+   */
+  "FOREIGN_ORIGIN",
+  /** A tag carries `data-deployment` but its `src` loads no widget of ours. */
+  "NO_WIDGET_SRC",
+  /** Our widget is loaded by a tag carrying no `data-deployment` at all. */
+  "NO_DEPLOYMENT_ID",
+  /** It carries one that is not a deployment identifier. */
+  "MALFORMED_DEPLOYMENT_ID",
+  /** It carries a different deployment's identifier. */
+  "OTHER_DEPLOYMENT",
+] as const;
+
+export type WidgetReason = (typeof WIDGET_REASONS)[number];
+
 const REDIRECT_REASONS = [
   "INVALID_LOCATION",
   "UNSUPPORTED_SCHEME",
@@ -127,6 +171,28 @@ export const verificationMetadataSchema = z.strictObject({
    * codes and the migration.
    */
   redirect_reason: z.enum(REDIRECT_REASONS).optional(),
+  /**
+   * The canonical encoding name the body was read as (TASK-024) — never the
+   * label the page wrote. `TextDecoder` maps every label the encoding standard
+   * defines onto one of its own names, so this value comes from a fixed list
+   * rather than from the customer's bytes, which is what makes it storable
+   * here at all. It is the only record of which of three sources won, and so
+   * the only explanation available if a page was read wrongly.
+   */
+  charset: z.string().max(64).optional(),
+  /**
+   * How many tags loading this installation's widget the page carries
+   * (TASK-024). The widget documents one install per page, and zero against
+   * two is the difference between a missing tag and a page that renders one
+   * notice against the last tag's identifier.
+   *
+   * A count, never an identifier. A deployment ID read off the page belongs to
+   * some other organization, and storing it here would be a cross-tenant leak
+   * through the column §34 exists to protect.
+   */
+  widget_tags: z.int().min(0).optional(),
+  /** Which of {@link WIDGET_REASONS} explains the inspection's answer. */
+  widget_reason: z.enum(WIDGET_REASONS).optional(),
 });
 
 export type VerificationMetadata = z.infer<typeof verificationMetadataSchema>;

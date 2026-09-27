@@ -100,13 +100,24 @@ const RETRY_OVER_HTTP = new Set<VerificationFailureCode>([
   "CONNECTION_TIMEOUT",
 ]);
 
+export type VerificationFetchSuccess = Readonly<{
+  ok: true;
+  httpStatus: number;
+  /**
+   * The URL the body actually came from, which a redirect chain may have
+   * moved. TASK-024 resolves a relative `src` against it, and needs the whole
+   * URL rather than `metadata.final_host`: a hop may carry a path, and the
+   * metadata's fields are optional because a check that failed at DNS
+   * observed none of them — so a consumer would have to guess a default for
+   * something the transport knows exactly.
+   */
+  finalUrl: string;
+  body: Buffer;
+  metadata: VerificationMetadata;
+}>;
+
 export type VerificationFetchResult =
-  | Readonly<{
-      ok: true;
-      httpStatus: number;
-      body: Buffer;
-      metadata: VerificationMetadata;
-    }>
+  | VerificationFetchSuccess
   | Readonly<{
       ok: false;
       code: VerificationFailureCode;
@@ -211,6 +222,7 @@ export async function fetchPage(
     ? Object.freeze({
         ok: true as const,
         httpStatus: chain.httpStatus,
+        finalUrl: chain.finalUrl,
         body: chain.body,
         metadata,
       })
@@ -227,6 +239,8 @@ type ChainResult = Readonly<{
   scheme: "https" | "http";
   redirects: number;
   finalHost: string;
+  /** The last URL requested, path and all. */
+  finalUrl: string;
   contentType: string | null;
 }> &
   (
@@ -258,7 +272,12 @@ async function followChain(
 
   for (;;) {
     const hop = await requestOnce(url, deadline, lookup, record, ports);
-    const where = { scheme, redirects, finalHost: url.hostname } as const;
+    const where = {
+      scheme,
+      redirects,
+      finalHost: url.hostname,
+      finalUrl: url.toString(),
+    } as const;
 
     if (hop.kind === "failure") {
       return {

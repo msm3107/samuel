@@ -8,7 +8,7 @@
 -- everything rolls back.
 begin;
 
-select plan(34);
+select plan(37);
 
 -- Fixtures ------------------------------------------------------------------------
 
@@ -300,6 +300,49 @@ select lives_ok(
              '00000000-0000-4000-8000-000000220d01', 'failure', '2001-01-04',
              'CONNECTION_FAILED') $$,
   'CONNECTION_FAILED is a stored code (TASK-023)'
+);
+
+-- The inspection keys (TASK-024) ---------------------------------------------------
+
+select throws_ok(
+  $$ insert into public.verification_checks
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected, metadata)
+     values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
+             '00000000-0000-4000-8000-000000220d01', 'success', '2002-01-01', 200, true,
+             '{"charset": "utf-8", "found_deployment": "dep_7k2m4qphr6vt3wzc5nxa7jd2fb"}'::jsonb) $$,
+  '23514',
+  null,
+  'an identifier read off the customer page has no key to go in (TASK-024)'
+);
+
+select lives_ok(
+  $$ insert into public.verification_checks
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        http_status, widget_detected, metadata)
+     values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
+             '00000000-0000-4000-8000-000000220d01', 'success', '2002-01-02', 200, true,
+             '{"scheme": "https", "https_failed": false, "redirects": 0,
+                "final_host": "shop.example.com", "response_bytes": 40960,
+                "duration_ms": 812, "content_type": "text/html",
+                "redirect_reason": "PORT_NOT_ALLOWED",
+                "charset": "windows-1252", "widget_tags": 1,
+                "widget_reason": "FOREIGN_ORIGIN"}'::jsonb) $$,
+  'every key a check produces, transport and inspection together, is accepted'
+);
+
+-- A failure that found the script but not this deployment's identifier. README
+-- §18 asks two questions, and TASK-022 constrains only that a *success* means
+-- the widget was found, so this pair is storable on purpose.
+select lives_ok(
+  $$ insert into public.verification_checks
+       (organization_id, deployment_id, disclosure_id, status, check_window,
+        failure_code, http_status, widget_detected, metadata)
+     values ('00000000-0000-4000-8000-000000220a01', '00000000-0000-4000-8000-000000220c02',
+             '00000000-0000-4000-8000-000000220d01', 'failure', '2002-01-03',
+             'DEPLOYMENT_ID_MISMATCH', 200, true,
+             '{"widget_tags": 1, "widget_reason": "OTHER_DEPLOYMENT"}'::jsonb) $$,
+  'a failure may record that the widget was found (TASK-024)'
 );
 
 -- The reserved integrity columns (README §20) --------------------------------------

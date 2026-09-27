@@ -429,6 +429,35 @@ scheduler must catch per deployment, log which hostname it was, and write no
 row for that deployment.** A rejection that reaches it unguarded stops a whole
 run.
 
+**Decisions taken in TASK-024** (owner, 2026-09-27). Presence is our own
+script tag served from our own host, and a tag loading a copy of `widget.js`
+from the customer's own domain is not presence: the widget resolves its
+configuration endpoint from its own script URL, so a copy asks the customer's
+host for a notice and renders nothing. The HTML is searched by a tokenizer
+written here rather than by an installed parser — §56's question, asked about a
+dependency whose job would be to be fed hostile bytes from arbitrary websites
+inside our own process. The body is decoded in the order a browser uses: byte
+order mark, `Content-Type` charset, `<meta charset>`, UTF-8, because a page read
+with the wrong encoding is a `WIDGET_NOT_FOUND` recorded against a customer who
+complied.
+
+**§18's fourth question is answered "not by HTML inspection"** (owner,
+2026-09-27), and that is a launch limit rather than a deferral of work. The
+disclosure version the widget renders arrives from our own endpoint after a
+`fetch`, so it is never in the customer's HTML: `DISCLOSURE_VERSION_MISMATCH` is
+reserved and emitted by nothing, and `disclosure_version` is null in every row
+TASK-024 produces. Reading it from our own database was refused — a success
+would assert something the page never showed. A stale notice is therefore
+indistinguishable from a current one until §18's isolated browser environment
+exists, and README §18 says so in the section that asks the question.
+
+**The `metadata` whitelist was widened once, as planned.** `charset`,
+`widget_tags` and `widget_reason`, in TASK-024's own migration. One key was
+asked for and refused: the deployment identifier found on the page. It is the
+most useful fact there is for a `DEPLOYMENT_ID_MISMATCH`, and it belongs to
+another organization — storing it would be a cross-tenant leak through the one
+column §34 exists to protect.
+
 **A limit of the TASK-023 tests, stated rather than hidden.** The SSRF proofs
 use the real guarded lookup with a fake resolver, because no test machine can
 own 169.254.169.254; the transport proofs override the lookup to reach a real

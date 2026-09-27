@@ -35,4 +35,5 @@ export async function fetchVerificationPage(hostname: string) {
 export {
   VERIFICATION_FETCH_BOUNDS,
   type VerificationFetchResult,
+  type VerificationFetchSuccess,
 } from "@/features/verification/fetch-page.internal";
