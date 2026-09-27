@@ -55,7 +55,15 @@ alter table public.verification_checks
       'duration_ms',
       -- The `Content-Type` header as given, so a PDF home page is
       -- explicable rather than mysteriously missing a widget.
-      'content_type'
+      'content_type',
+      -- Which redirect rule refused a hop. REDIRECT_BLOCKED is one code over
+      -- six causes that need six different fixes, and this is the one failure
+      -- class the customer must act on (PR #40 review, note 2). The value
+      -- comes from a fixed list of seven strings with no customer data in it,
+      -- so storing it is privacy-safe by construction; the row schema bounds
+      -- the value, because a constraint on a value is what this migration
+      -- deliberately declines to do.
+      'redirect_reason'
     ] = '{}'::jsonb
   );
 

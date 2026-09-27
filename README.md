@@ -959,6 +959,24 @@ an attacker on the path can write.
 `Article50Verifier/1.0` and the application's URL, so a customer reading their
 access log can tell what the traffic is and allow it deliberately.
 
+**A refused redirect says which rule refused it.** `REDIRECT_BLOCKED` is one
+stored code over six causes that each need a different fix, so the rule is
+recorded in `metadata.redirect_reason` (§6). §19 governs `failure_code`; the
+detail belongs beside it rather than multiplying the code list.
+
+**The fetch has no options.** A caller passes a hostname. The bounds, the
+scheme order, the redirect rules and the address rules are not parameters, and
+the test seams that exist for exercising the transport live in a module an
+ESLint rule keeps out of application code. A fetch whose guard can be replaced
+by its caller is not a guard.
+
+**A fault of ours is never recorded as a customer's failure.** If the verifier
+cannot even build the request — a hostname that will not parse, an invalid
+environment — it raises rather than writing a `failure` row. Both were
+validated long before the check ran, so a row would say a customer had not
+complied when the truth is that our code is wrong. The scheduler catches per
+deployment and records nothing for that one.
+
 ---
 
 ## 18. Verification

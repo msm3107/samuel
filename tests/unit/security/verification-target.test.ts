@@ -11,6 +11,8 @@ import {
   VERIFICATION_TARGET_FAILURES,
 } from "@/lib/security/verification-target";
 
+import { verificationMetadataSchema } from "@/features/verification/verification-check";
+
 describe("normalizeHostname", () => {
   it.each([
     ["shop.example.com", "shop.example.com"],
@@ -433,5 +435,18 @@ describe("validateRedirectTarget", () => {
     expect(REDIRECT_REFUSALS as readonly string[]).not.toContain(
       "PATH_NOT_ALLOWED",
     );
+  });
+});
+
+describe("the redirect reasons a row may store", () => {
+  it("are the same seven the validator produces", () => {
+    // `features/verification/verification-check.ts` writes the list out again
+    // rather than importing it, because that module is a row shape a Phase 8
+    // screen may need and this one is `server-only`. So the copy is kept
+    // honest here, as the failure codes are kept honest against the migration.
+    const shape = verificationMetadataSchema.shape.redirect_reason;
+    const stored = shape.unwrap().options;
+
+    expect([...stored].sort()).toEqual([...REDIRECT_REFUSALS].sort());
   });
 });

@@ -40,7 +40,8 @@ Owner, 2026-09-27.
    migration is a deliberate act rather than drift. Cost: two migrations
    against the constraint before any row exists.
 
-Implementer (proposed, **awaiting sign-off**): `node:http` rather than `fetch`,
+Implementer: fourteen proposals, all accepted on the PR #40 review. Accepted
+by Mikołaj Smoliniec (project owner), 2026-09-27. `node:http` rather than `fetch`,
 because each bound needs its own code and the resolved address has to be the
 one connected to; DNS resolved once by a guarded `lookup` that is the only way
 an address reaches the socket; Happy Eyeballs off, one validated address; the
@@ -51,10 +52,9 @@ registration one; a hop may carry a path where the original may not; a
 never truncates; `Accept-Encoding: identity` with gzip, deflate and Brotli
 handled anyway under a decompressed-output cap; the body returned as bytes;
 `GET` only with a self-naming User-Agent; a non-2xx is `HTTP_ERROR` with the
-status; and the whole thing `server-only` with bounds as module constants. The
+status; the whole thing `server-only` with bounds as module constants and no
+seams on its public surface; and `CONNECTION_FAILED` added to README §19. The
 contract states each one's reason and what was rejected.
-
-**One of these widens README §19.** See below.
 
 ### Files changed
 
@@ -62,7 +62,12 @@ contract states each one's reason and what was rejected.
 - `lib/security/verification-lookup.ts` (new): the guarded DNS lookup
 - `lib/security/verification-target.ts`: `validateRedirectTarget` and
   `REDIRECT_REFUSALS`
-- `features/verification/fetch-page.ts` (new): the transport and its bounds
+- `features/verification/fetch-page.ts` (new): the public surface — a hostname
+  and nothing else
+- `features/verification/fetch-page.internal.ts` (new): the transport, its
+  bounds and the three test seams
+- `eslint.config.mjs`: `**/*.internal` importable only from `tests/` and the
+  wrapper beside it
 - `features/verification/verification-check.ts`: the `metadata` schema, and
   `CONNECTION_FAILED`
 - `supabase/migrations/20260927100000_verification_metadata_keys.sql` (new)
@@ -119,6 +124,66 @@ contract states each one's reason and what was rejected.
   three options the function does take are test seams, each documented as one,
   and none of them appears in application code.
 
+### The PR #40 review
+
+Approved with four non-blocking notes, all accepted. Three changed code; one
+settled a policy and recorded an obligation.
+
+- **Note 1, an oversized response recorded nothing about itself. Applied.**
+  Every failure hard-coded `httpStatus: null` and `contentType: null`, although
+  `RESPONSE_TOO_LARGE` and the decompression `UNKNOWN_ERROR` are raised where
+  the server's own answer is in scope. A 4 MB home page now records
+  `failure / RESPONSE_TOO_LARGE`, `http_status 200`, `content_type text/html`,
+  so support can tell it from something stranger instead of asking the customer
+  to guess. No migration: `http_status` is nullable and TASK-022 requires it
+  only on a success. `response.statusCode ?? 0` became `null` plus
+  `UNKNOWN_ERROR` in the same note, because 0 is the one value the column's own
+  constraint refuses — an unreachable case that would have failed the insert
+  and lost the evidence rather than degraded it.
+- **Note 2, `REDIRECT_BLOCKED` collapsed six customer-fixable causes.
+  Applied, in this task's migration.** A stray `ftp://`, a `:8443`, credentials
+  in a `Location`, a bare IP, a malformed header, a downgrade — six causes
+  needing six different fixes, under one stored code. §19 governs
+  `failure_code`, not `metadata`, so the reason is now a whitelisted
+  `redirect_reason` key. It lands here rather than in TASK-024's migration,
+  which the reviewer offered, by the rule that settled PR #39 note 4: a key
+  belongs with the task that produces the fact, and TASK-024 never sees a
+  redirect. Privacy-safe by construction: the seven values are a fixed list
+  with no customer data in it. Bounded by the row schema rather than by the
+  constraint, because a constraint on a value is what this migration declines
+  to do.
+- **Note 3, one of the three seams removed the guard, and it was a public
+  parameter. Applied.** The module's reason for constant bounds is that a
+  caller who could widen them could widen them for a hostile target — and
+  `options.lookup` then handed a caller the guard. The seams moved to
+  `fetch-page.internal.ts`; `fetch-page.ts` takes a hostname and nothing else,
+  and an ESLint `no-restricted-imports` rule on `**/*.internal` allows only
+  `tests/` and that wrapper. Chosen over a `NODE_ENV` guard on TASK-020's
+  precedent: a rule fires at review time, while a runtime guard is itself
+  load-bearing code that would have to be written carefully not to fire during
+  `next build`. Rejected: a contract invariant plus a source scan, which
+  catches a caller after it is written — and TASK-025 is the next caller. The
+  rule was proven to fire, on a throwaway file that imported the internal
+  module from `features/`, and proven not to fire on the wrapper or on tests.
+- **Note 4, the function's type said it returns and it can reject. Settled:
+  let it reject.** Both throws are ours: a hostname that will not parse was
+  validated by TASK-011 and TASK-012, and an invalid environment means nothing
+  works. Turning either into a `failure / UNKNOWN_ERROR` row would write false
+  evidence about a customer who did nothing wrong — the reviewer's own stated
+  downside. Better no row than a wrong one. **Owed by TASK-025:** catch per
+  deployment, log which hostname, and write no row for it.
+
+Two bookkeeping defects the review caught, both fixed. Proposal 13 said "two
+test seams" and left the third — `ports`, the one that aims the request —
+unnamed; it now names all three and says why they are not equivalent.
+`CONNECTION_FAILED` was proposed only here, with nowhere to carry an
+`Accepted by` marker; it is now proposal 14 in the contract.
+
+One thing the review corrected in my own reasoning, worth recording: the
+migration is safe for a better reason than "the table is empty". The new code
+list is a strict **superset** of the old one, so no row could fail
+revalidation even if rows existed.
+
 ### One code added to README §19
 
 `CONNECTION_FAILED`. The name resolved and the connection was then refused,
@@ -134,8 +199,9 @@ a Postgres enum, and this is the first time that cost has been paid.
 
 ### The `metadata` whitelist, and what it does not do
 
-Seven keys: `scheme`, `https_failed`, `redirects`, `final_host`,
-`response_bytes`, `duration_ms`, `content_type`. Enforced three ways — a check
+Eight keys: `scheme`, `https_failed`, `redirects`, `final_host`,
+`response_bytes`, `duration_ms`, `content_type`, and `redirect_reason` from
+the review's note 2. Enforced three ways — a check
 constraint, a `z.strictObject` row schema, and a unit test that keeps the two
 equal in both directions, since a key the schema knows that the constraint
 refuses would fail every write, and a key the constraint allows that the
@@ -189,6 +255,14 @@ task is written the same way.
   `Accept-Encoding` a customer's log will show; a planted string proving page
   content reaches the caller and not the metadata; and both timeouts against
   real clocks.
+- **Security, what a failed check still records** (review notes 1 and 2): an
+  oversized response keeps its status and type; so does an unreadable
+  encoding; a response that never arrived keeps neither, which is the
+  asymmetry the column already means; each of four refused hops stores the
+  rule that refused it; and a check with no refused hop stores no reason.
+- **Security, the public surface** (review note 3): `fetchVerificationPage`
+  takes one parameter, and a hostname it cannot parse rejects rather than
+  returning a failure row.
 - **pgTAP**: a key nobody put on the whitelist, one unknown key among allowed
   ones, every key the fetch produces, and `CONNECTION_FAILED` as a stored code.
 - **Unit**: the migration's key list equals the row schema's, and the
@@ -218,7 +292,7 @@ On the final state of the branch:
 pnpm typecheck                       pass (both projects)
 pnpm lint                            pass
 pnpm format:check                    pass
-pnpm test                            68 files, 1814 tests, pass
+pnpm test                            68 files, 1822 tests, pass
 supabase test db --local             9 files, 326 tests, pass
 vitest --config vitest.supabase.*    34 files, 413 tests, pass
 pnpm test:e2e:supabase               31 tests, pass
@@ -241,6 +315,11 @@ across the tree, for the same reason.
 
 ### Remaining concerns
 
+- **TASK-025 owes a catch per deployment** (review note 4). The fetch rejects
+  rather than inventing a failure row when the fault is ours; the scheduler has
+  to catch it, log which hostname it was, and write no row for that
+  deployment. A rejection that reaches the scheduler unguarded would stop a
+  whole run.
 - **TASK-024 is next**: HTML inspection and the failure-code mapping —
   `WIDGET_NOT_FOUND`, `DEPLOYMENT_ID_MISMATCH`, `DISCLOSURE_VERSION_MISMATCH`
   — over the bytes this task returns, plus its own `metadata` keys added to

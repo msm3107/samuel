@@ -104,7 +104,8 @@ Chosen by Mikołaj Smoliniec (project owner), 2026-09-27:
 
 ## Proposed by the implementer
 
-Awaiting sign-off.
+All fourteen accepted on the PR #40 review. Accepted by Mikołaj Smoliniec
+(project owner), 2026-09-27.
 
 1. **`node:http` and `node:https` directly, not `fetch`.** All four bounds
    have to be separable — a connection that never opened is a different fact
@@ -174,12 +175,29 @@ Awaiting sign-off.
     3xx with no usable `Location` is the same. The status is the evidence; a
     separate code per class would multiply §19 without telling anyone
     anything the number does not.
-13. **The whole fetch is `server-only` and takes no caller-supplied
-    bounds.** The options are a hostname and two test seams (the resolver
-    and, for exercising the transport against a loopback server, the lookup
-    itself). Bounds are module constants, so no future caller can widen
-    them; the seams are named, documented and defaulted to the guarded
-    path, and a test asserts the defaults are the guarded ones.
+13. **The whole fetch is `server-only`, takes no caller-supplied bounds, and
+    exposes no seams at all.** Bounds are module constants, so no future
+    caller can widen them. There are **three** test seams, not two, and they
+    are not equivalent: `resolve` still feeds the guarded lookup, `ports`
+    still needs an address the guard approved, and `lookup` replaces the
+    guard outright. They live in `fetch-page.internal.ts`, which an ESLint
+    rule allows only `tests/` and the public wrapper to import. Corrected and
+    hardened on the PR #40 review, note 3: the original wording said "two
+    test seams" and left the third — `ports`, the one that aims the request —
+    unnamed.
+14. **One README §19 code is added: `CONNECTION_FAILED`.** A name that
+    resolved and a connection then refused, reset, unreachable or rejected
+    at TLS — a site that is simply down, the most common real failure there
+    is. §19's set had no code for it, so it would have landed on
+    `UNKNOWN_ERROR`, which tells a customer nothing and is what §19 exists
+    to prevent. The list is replaced rather than extended, because a check
+    constraint has no `add value`: the cost TASK-022 accepted when it chose
+    text with a constraint over a Postgres enum, paid here for the first
+    time. Rejected: reusing `CONNECTION_TIMEOUT`, which would misname a
+    refusal as a timeout, and `UNKNOWN_ERROR`, since the most common failure
+    is the one that most deserves a name. Listed here, rather than only in
+    the handoff, so it has somewhere to be accepted (PR #40 review, note 3's
+    bookkeeping).
 
 ## Invariants
 
@@ -196,6 +214,15 @@ Awaiting sign-off.
   on the database refuses a key that is not on the list.
 - **Nothing from the fetched page reaches a log**, beyond status, size,
   hostnames and timings.
+- **No application code can pass a seam.** The public module takes a hostname
+  and nothing else; the seams live in a module an ESLint rule reserves for
+  `tests/` and that wrapper.
+- **A thrown error is never turned into a failure row.** A hostname that will
+  not parse, or an invalid environment, is our fault rather than the
+  customer's; the fetch rejects, and TASK-025 catches per deployment.
+- **`http_status` is recorded whenever the server answered**, a refusal
+  included, and is never coerced to a value the column's own constraint
+  refuses.
 
 ## Acceptance criteria
 
@@ -215,6 +242,86 @@ Awaiting sign-off.
 - A 404 and a 500 are each `HTTP_ERROR` with the status recorded.
 - `metadata` accepts every key the fetch produces and refuses any other, in
   the database and in the row schema.
+
+## Amendment: the PR #40 review
+
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-27. Four non-blocking
+notes; three changed code, one settled a policy and recorded an obligation.
+
+- **Note 1, an oversized response recorded nothing about itself. Applied.**
+  `followChain` hard-coded `httpStatus: null` and `contentType: null` for every
+  failure, although `RESPONSE_TOO_LARGE` and the decompression
+  `UNKNOWN_ERROR` are raised from inside the response handler, where the
+  server's own answer is in scope. A 4 MB home page now records
+  `failure / RESPONSE_TOO_LARGE`, `http_status 200`, `content_type text/html`,
+  so support can tell it from something stranger instead of asking the
+  customer to guess. Decision 12 already honoured "with the status recorded"
+  for `HTTP_ERROR`; this was the neighbouring case, and it needed no migration,
+  because `http_status` is nullable and TASK-022 requires it only on a
+  success. Cost, accepted: a `RESPONSE_TOO_LARGE` row carries a status where a
+  `DNS_ERROR` row cannot — the right asymmetry, because the column already
+  means "if we got one". Folded into the same note: `response.statusCode ?? 0`
+  became `null` plus `UNKNOWN_ERROR`, because 0 is the one value
+  `check (http_status between 100 and 599)` refuses, so the unreachable case
+  would have failed the insert and lost the evidence rather than degraded it.
+- **Note 2, `REDIRECT_BLOCKED` collapsed six customer-fixable causes.
+  Applied, in this task's own migration.** §19 governs `failure_code`, not
+  `metadata`, and this is the one failure class the customer must act on: a
+  stray `ftp://`, a `:8443`, credentials in a `Location`, a bare IP, a
+  malformed header, a downgrade — six causes needing six different fixes. The
+  reason is now stored under a whitelisted `redirect_reason` key. It lands
+  here rather than in TASK-024's migration, which the reviewer offered,
+  because of the rule that settled PR #39 note 4: a key belongs with the task
+  that produces the fact, and TASK-024 never sees a redirect. Rejected: six
+  new §19 codes, since the argument against a code per HTTP class applies —
+  they would force every consumer of the list to handle a detail about one
+  code — and leaving the reason in a log, since a log line is not evidence a
+  customer can see. Storing it is privacy-safe by construction rather than by
+  care: `REDIRECT_REFUSALS` is a fixed list of seven strings with no customer
+  data in it. The value is bounded by the row schema rather than by the
+  constraint, because a constraint on a value is what this migration
+  deliberately declines to do.
+- **Note 3, one of the three seams removed the guard, and it was a public
+  parameter. Applied.** The module's stated reason for constant bounds is that
+  a caller who could widen them could widen them for a hostile target — and
+  `options.lookup` then handed a caller the guard itself. The seams now live
+  in `fetch-page.internal.ts`; `fetch-page.ts` takes a hostname and nothing
+  else, and an ESLint `no-restricted-imports` rule on `**/*.internal` allows
+  only `tests/` and that wrapper. A rule that fires at review time was chosen
+  over a `NODE_ENV` guard, following TASK-020's ESLint block on
+  `public/widget.js`: a runtime guard is itself load-bearing code, and
+  `next build` runs with `NODE_ENV=production`, so it would have had to be
+  written carefully not to fire during a build. Cost, accepted: one more
+  module, and `no-restricted-imports` is a new mechanism in
+  `eslint.config.mjs`, so a future internal module has to add its public
+  sibling to one ignore list. Rejected: a contract invariant plus a
+  source-scanning test, which catches a caller after it is written rather than
+  making it impossible and can be fooled by an alias — and TASK-025 is the
+  next caller.
+- **Note 4, the function's type said it returns and it can reject. Settled:
+  let it reject.** `new URL(hostname)` and `serverEnv()` both throw
+  synchronously, and both are our fault: a hostname that will not parse was
+  already validated by TASK-011 and TASK-012, and an invalid environment means
+  nothing works. Turning either into a `failure / UNKNOWN_ERROR` row would
+  write false evidence about a customer who did nothing wrong — the reviewer's
+  own stated downside, and exactly what §19 exists to prevent. Better no row
+  than a wrong one. Rejected: a catch-all returning `UNKNOWN_ERROR` with a
+  loud log, on TASK-020's precedent for `public/widget.js` — but there the
+  alternative was breaking a customer's page, not writing false evidence, and
+  if `serverEnv()` is what threw then the logger cannot be constructed either.
+  Also rejected: catching only the hostname, which is two error policies in
+  one function and still records our validation gap as the customer's failure.
+  **Owed by TASK-025:** catch per deployment, log which hostname, and write no
+  row for it.
+
+### Out of contract
+
+Recorded under the owner's standing permission to edit outside the Allowed
+files (2026-09-24):
+
+- `eslint.config.mjs`, for note 3's import restriction. The Allowed files did
+  not anticipate a lint rule, and the alternative the reviewer offered was
+  explicitly the weaker one.
 
 ## Required tests
 

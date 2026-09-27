@@ -287,7 +287,8 @@ select lives_ok(
              '00000000-0000-4000-8000-000000220d01', 'success', '2001-01-03', 200, true,
              '{"scheme": "https", "https_failed": false, "redirects": 2,
                 "final_host": "www.example.com", "response_bytes": 40960,
-                "duration_ms": 812, "content_type": "text/html"}'::jsonb) $$,
+                "duration_ms": 812, "content_type": "text/html",
+                "redirect_reason": "PORT_NOT_ALLOWED"}'::jsonb) $$,
   'every key the fetch produces is accepted'
 );
 

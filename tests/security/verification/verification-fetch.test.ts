@@ -11,11 +11,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+import { fetchVerificationPage } from "@/features/verification/fetch-page";
+// The seam-taking module, which only `tests/` may import (PR #40 review,
+// note 3). `fetchVerificationPage` above is the surface the application uses,
+// and it takes a hostname and nothing else.
 import {
-  fetchVerificationPage,
+  fetchPage,
   VERIFICATION_FETCH_BOUNDS,
   type VerificationFetchPorts,
-} from "@/features/verification/fetch-page";
+} from "@/features/verification/fetch-page.internal";
 import { VERIFICATION_METADATA_KEYS } from "@/features/verification/verification-check";
 import {
   type AddressResolver,
@@ -119,7 +123,7 @@ describe("the verifier's fetch, against a blocked target", () => {
         response.end("<html><!-- article50 --></html>");
       });
 
-      const result = await fetchVerificationPage("shop.example.com", {
+      const result = await fetchPage("shop.example.com", {
         resolve: answers(address),
         ports: { http: server.port, https: server.port },
       });
@@ -135,7 +139,7 @@ describe("the verifier's fetch, against a blocked target", () => {
 
     // Only the private address is refused; the public one would be connected
     // to. Here both are private, so nothing is.
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       resolve: answers("10.0.0.7", "127.0.0.1"),
       ports: { http: server.port, https: server.port },
     });
@@ -145,7 +149,7 @@ describe("the verifier's fetch, against a blocked target", () => {
   });
 
   it("reports a resolver failure as DNS_ERROR, not as a blocked address", async () => {
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       resolve: (_hostname, _family, callback) => {
         callback(new Error("getaddrinfo ENOTFOUND"), []);
       },
@@ -166,7 +170,7 @@ describe("the verifier's fetch, against a blocked target", () => {
     });
     const https = await closedPort();
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: { http: server.port, https },
       lookup: (record: LookupRecord) => {
         const guarded = createGuardedLookup(record, answers("10.1.2.3"));
@@ -192,7 +196,7 @@ describe("the verifier's fetch, against a blocked target", () => {
     });
     const https = await closedPort();
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: { http: server.port, https },
       lookup: () => toLoopback,
     });
@@ -215,7 +219,7 @@ describe("the verifier's fetch, against a blocked target", () => {
         response.end();
       });
 
-      const result = await fetchVerificationPage("shop.example.com", {
+      const result = await fetchPage("shop.example.com", {
         ports: { http: server.port, https },
         lookup: () => toLoopback,
       });
@@ -239,7 +243,7 @@ describe("the verifier's fetch, against a real server", () => {
       response.end(page);
     });
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: await ports(server.port),
       lookup: () => toLoopback,
     });
@@ -263,7 +267,7 @@ describe("the verifier's fetch, against a real server", () => {
   it("names itself, and asks for no encoding", async () => {
     const server = await serve((_request, response) => response.end("ok"));
 
-    await fetchVerificationPage("shop.example.com", {
+    await fetchPage("shop.example.com", {
       ports: await ports(server.port),
       lookup: () => toLoopback,
     });
@@ -293,7 +297,7 @@ describe("the verifier's fetch, against a real server", () => {
       response.end("<html>done</html>");
     });
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: await ports(first.port),
       lookup: () => toLoopback,
     });
@@ -313,7 +317,7 @@ describe("the verifier's fetch, against a real server", () => {
       response.end();
     });
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: await ports(server.port),
       lookup: () => toLoopback,
     });
@@ -340,7 +344,7 @@ describe("the verifier's fetch, against a real server", () => {
       response.write(chunk);
     });
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: await ports(server.port),
       lookup: () => toLoopback,
     });
@@ -365,7 +369,7 @@ describe("the verifier's fetch, against a real server", () => {
       response.end();
     });
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: await ports(server.port),
       lookup: () => toLoopback,
     });
@@ -383,7 +387,7 @@ describe("the verifier's fetch, against a real server", () => {
       response.end(body);
     });
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: await ports(server.port),
       lookup: () => toLoopback,
     });
@@ -405,7 +409,7 @@ describe("the verifier's fetch, against a real server", () => {
       response.end("<html>sorry</html>");
     });
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: await ports(server.port),
       lookup: () => toLoopback,
     });
@@ -420,7 +424,7 @@ describe("the verifier's fetch, against a real server", () => {
       response.end();
     });
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: await ports(server.port),
       lookup: () => toLoopback,
     });
@@ -439,7 +443,7 @@ describe("the verifier's fetch, against a real server", () => {
       response.end(gzipSync(Buffer.from(page, "utf8")));
     });
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: await ports(server.port),
       lookup: () => toLoopback,
     });
@@ -463,7 +467,7 @@ describe("the verifier's fetch, against a real server", () => {
       response.end(bomb);
     });
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: await ports(server.port),
       lookup: () => toLoopback,
     });
@@ -481,7 +485,7 @@ describe("the verifier's fetch, against a real server", () => {
       response.end(Buffer.from([0x28, 0xb5, 0x2f, 0xfd]));
     });
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: await ports(server.port),
       lookup: () => toLoopback,
     });
@@ -497,7 +501,7 @@ describe("the verifier's fetch, against a real server", () => {
       response.end(`<html><p>${secret}</p></html>`);
     });
 
-    const result = await fetchVerificationPage("shop.example.com", {
+    const result = await fetchPage("shop.example.com", {
       ports: await ports(server.port),
       lookup: () => toLoopback,
     });
@@ -519,7 +523,7 @@ describe("the verifier's fetch, against a real server", () => {
       });
       const startedAt = Date.now();
 
-      const result = await fetchVerificationPage("shop.example.com", {
+      const result = await fetchPage("shop.example.com", {
         ports: await ports(server.port),
         lookup: () => toLoopback,
       });
@@ -539,7 +543,7 @@ describe("the verifier's fetch, against a real server", () => {
       // A lookup that never answers: no socket is ever connected, so what is
       // left is the connect bound, and it has its own code rather than
       // sharing the total one.
-      const result = await fetchVerificationPage("shop.example.com", {
+      const result = await fetchPage("shop.example.com", {
         ports: { http: 1, https: 1 },
         lookup: () => () => {
           /* never calls back */
@@ -550,4 +554,115 @@ describe("the verifier's fetch, against a real server", () => {
     },
     VERIFICATION_FETCH_BOUNDS.totalMs + 15_000,
   );
+});
+
+describe("what a failed check still records", () => {
+  async function ports(httpPort: number): Promise<VerificationFetchPorts> {
+    return { http: httpPort, https: await closedPort() };
+  }
+
+  it("keeps the status and the type on an oversized response", async () => {
+    // PR #40 review, note 1: the server answered, so the row knows what it
+    // answered with. Support can tell a 200 of 4 MB of HTML from something
+    // stranger, instead of asking the customer to guess.
+    const server = await serve((_request, response) => {
+      response.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "content-length": String(VERIFICATION_FETCH_BOUNDS.maxBodyBytes + 1),
+      });
+      response.write("a");
+    });
+
+    const result = await fetchPage("shop.example.com", {
+      ports: await ports(server.port),
+      lookup: () => toLoopback,
+    });
+
+    expect(!result.ok && result.code).toBe("RESPONSE_TOO_LARGE");
+    expect(!result.ok && result.httpStatus).toBe(200);
+    expect(result.metadata.content_type).toBe("text/html; charset=utf-8");
+  });
+
+  it("keeps them on an encoding it could not read", async () => {
+    const server = await serve((_request, response) => {
+      response.writeHead(200, {
+        "content-type": "text/html",
+        "content-encoding": "zstd",
+      });
+      response.end(Buffer.from([0x28, 0xb5, 0x2f, 0xfd]));
+    });
+
+    const result = await fetchPage("shop.example.com", {
+      ports: await ports(server.port),
+      lookup: () => toLoopback,
+    });
+
+    expect(!result.ok && result.code).toBe("UNKNOWN_ERROR");
+    expect(!result.ok && result.httpStatus).toBe(200);
+  });
+
+  it("records nothing about a response that never arrived", async () => {
+    const result = await fetchPage("shop.example.com", {
+      resolve: answers("127.0.0.1"),
+      ports: { http: 1, https: 1 },
+    });
+
+    // The asymmetry is deliberate: http_status means "if we got one".
+    expect(!result.ok && result.httpStatus).toBeNull();
+    expect(result.metadata.content_type).toBeUndefined();
+  });
+
+  it("says which redirect rule refused a hop", async () => {
+    const https = await closedPort();
+    for (const [location, reason] of [
+      ["ftp://files.example.com/", "UNSUPPORTED_SCHEME"],
+      ["http://shop.example.com:8443/", "PORT_NOT_ALLOWED"],
+      ["http://user:pw@shop.example.com/", "EMBEDDED_CREDENTIALS"],
+      ["http://93.184.216.34/", "IP_ADDRESS_NOT_ALLOWED"],
+    ] as const) {
+      const server = await serve((_request, response) => {
+        response.writeHead(302, { location });
+        response.end();
+      });
+
+      const result = await fetchPage("shop.example.com", {
+        ports: { http: server.port, https },
+        lookup: () => toLoopback,
+      });
+
+      // One stored code, six causes, six different fixes (PR #40 review,
+      // note 2). The stored code stays REDIRECT_BLOCKED; the detail is in the
+      // metadata, where §19 does not reach.
+      expect(!result.ok && result.code).toBe("REDIRECT_BLOCKED");
+      expect(result.metadata.redirect_reason).toBe(reason);
+      expect(VERIFICATION_METADATA_KEYS).toContain("redirect_reason");
+    }
+  });
+
+  it("carries no redirect reason when no redirect was refused", async () => {
+    const server = await serve((_request, response) => response.end("ok"));
+
+    const result = await fetchPage("shop.example.com", {
+      ports: await ports(server.port),
+      lookup: () => toLoopback,
+    });
+
+    expect(result.metadata.redirect_reason).toBeUndefined();
+  });
+});
+
+describe("the public surface", () => {
+  it("takes a hostname and nothing else", () => {
+    // PR #40 review, note 3. The seams are not reachable from application
+    // code: the ESLint rule refuses the import, and this is the shape that
+    // makes the rule meaningful rather than decorative.
+    expect(fetchVerificationPage.length).toBe(1);
+  });
+
+  it("rejects rather than inventing evidence for a hostname it cannot parse", async () => {
+    // Owner's decision, 2026-09-27 (note 4): both throws are our bug, not the
+    // customer's. A failure row would say their site did not comply.
+    // TASK-025 catches per deployment and logs which hostname it was.
+    await expect(fetchVerificationPage("not a hostname")).rejects.toThrow();
+  });
 });

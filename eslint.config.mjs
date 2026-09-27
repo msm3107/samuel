@@ -55,6 +55,32 @@ export default tseslint.config(
     },
   },
   {
+    // TASK-023 (PR #40 review, note 3): a `*.internal.ts` module exists to
+    // hold the test seams its public sibling deliberately does not expose.
+    // `features/verification/fetch-page.internal.ts` takes a `lookup`, which
+    // replaces the guarded one and so removes the SSRF guarantee outright —
+    // so application code may not reach it, and the restriction fires at
+    // review time rather than at runtime (the `public/widget.js` block above
+    // is the precedent). A new internal module adds its public sibling to the
+    // ignore list below.
+    files: ["**/*.ts", "**/*.tsx"],
+    ignores: ["tests/**", "features/verification/fetch-page.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/*.internal", "**/*.internal.ts"],
+              message:
+                "Import the public module beside it. An *.internal module holds test seams that application code must not pass.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Rule 16: only the environment module reads process.env, so a stray
     // read anywhere else is a review signal rather than a convention.
     files: ["**/*.ts", "**/*.tsx"],

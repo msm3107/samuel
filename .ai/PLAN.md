@@ -406,6 +406,29 @@ customer nothing and is what §19 exists to prevent. `CONNECTION_FAILED` is
 added in the same migration as the metadata whitelist, before anything has
 written a row. Proposed by the implementer, awaiting sign-off.
 
+**Settled on the PR #40 review** (owner, 2026-09-27). `metadata` gained an
+eighth key, `redirect_reason`: `REDIRECT_BLOCKED` is one stored code over six
+causes that each need a different fix, and §19 governs `failure_code` rather
+than `metadata`. It landed in TASK-023 rather than TASK-024's migration by the
+same rule that settled PR #39 note 4 — a key belongs with the task that
+produces the fact, and TASK-024 never sees a redirect. A failure now also
+carries `http_status` and `content_type` whenever the server answered, so a
+4 MB page is a `RESPONSE_TOO_LARGE` that still says it was a 200 of
+`text/html`. And the fetch's three test seams moved out of its public surface
+into `fetch-page.internal.ts`, reachable only from `tests/` and its own
+wrapper by an ESLint rule: one of the three replaced the guarded lookup, in a
+module whose stated reason for constant bounds is that no caller may widen
+them.
+
+**Owed by TASK-025, decided on the PR #40 review** (owner, 2026-09-27). The
+fetch rejects rather than inventing evidence when the fault is ours — a
+hostname that will not parse, or an invalid environment. Both were already
+validated upstream, so turning either into a `failure / UNKNOWN_ERROR` row
+would write false evidence about a customer who did nothing wrong. **The
+scheduler must catch per deployment, log which hostname it was, and write no
+row for that deployment.** A rejection that reaches it unguarded stops a whole
+run.
+
 **A limit of the TASK-023 tests, stated rather than hidden.** The SSRF proofs
 use the real guarded lookup with a fake resolver, because no test machine can
 own 169.254.169.254; the transport proofs override the lookup to reach a real

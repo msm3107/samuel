@@ -81,6 +81,16 @@ export type VerificationFailureCode =
  * caller putting a page excerpt in `content_type`; what it stops is a new
  * key nobody reviewed.
  */
+const REDIRECT_REASONS = [
+  "INVALID_LOCATION",
+  "UNSUPPORTED_SCHEME",
+  "SCHEME_DOWNGRADE",
+  "EMBEDDED_CREDENTIALS",
+  "PRIVATE_NETWORK_BLOCKED",
+  "IP_ADDRESS_NOT_ALLOWED",
+  "PORT_NOT_ALLOWED",
+] as const;
+
 export const verificationMetadataSchema = z.strictObject({
   /** Which scheme answered. Plain HTTP is weaker evidence, so it is stored. */
   scheme: z.enum(["https", "http"]).optional(),
@@ -96,6 +106,27 @@ export const verificationMetadataSchema = z.strictObject({
   duration_ms: z.int().min(0).optional(),
   /** The `Content-Type` header as given, so a PDF home page is explicable. */
   content_type: z.string().max(256).optional(),
+  /**
+   * Which of the seven redirect rules refused a hop (PR #40 review, note 2).
+   * `REDIRECT_BLOCKED` is one stored code over six causes that need six
+   * different fixes — a stray `ftp://`, a `:8443`, credentials in a
+   * `Location`, a bare IP, a malformed header, a downgrade — and this is the
+   * one failure class the customer must act on. §19 governs `failure_code`,
+   * not `metadata`, and six more top-level codes would force every consumer
+   * of that list to handle a detail about one code.
+   *
+   * Storing it is privacy-safe by construction rather than by care:
+   * `REDIRECT_REFUSALS` is a fixed list of seven strings with no customer
+   * data in it. The constraint bounds the key; the enum here bounds the
+   * value, which the migration deliberately does not try to do.
+   *
+   * The seven values are written out again below rather than imported from
+   * `lib/security/verification-target`, which is `server-only`: this module is
+   * a row shape, and a Phase 8 screen may need it. A unit test keeps the two
+   * lists equal, which is what this repository already does for the failure
+   * codes and the migration.
+   */
+  redirect_reason: z.enum(REDIRECT_REASONS).optional(),
 });
 
 export type VerificationMetadata = z.infer<typeof verificationMetadataSchema>;
