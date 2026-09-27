@@ -550,6 +550,29 @@ continuing to exist.
 **Exit criteria.** Cross-tenant history reads fail. Pagination is bounded; no
 query can be made to return an unbounded result set.
 
+**Decisions taken in TASK-026** (owner, 2026-09-27). **The history cursor is
+`check_window`, not `checked_at`.** `unique (deployment_id, check_window)`
+guarantees one row per deployment per window, so a `<` cursor cannot skip a
+row — the guarantee is in the schema rather than in how the data happens to
+look, and `checked_at` is not unique. It also needs no migration: that
+constraint's own index serves the query exactly. TASK-022's
+`(deployment_id, checked_at desc)` index is therefore unused by this phase and
+stays for Phase 9's organization-wide reads.
+
+**One deployment's history, and no organization-wide read.** It is what the
+screen needs; reading across deployments is Phase 9's, where `check_window` is
+not unique and the cursor question has to be answered again. A page is 200
+checks, the same number as every other list here.
+
+**Paid in TASK-026** (PR #34 review, note 3). The paging rule both paged
+endpoints follow is documented in README §31 — the page size, that `truncated`
+carries no cursor and the caller asks again with the last row's own key, that
+`before` is exclusive, that each cursor is unique within what is paged so a
+boundary cannot skip a row, and that a malformed cursor is a 400 while a
+well-formed one below every row is an empty page. It had been deferred through
+three handoffs waiting for the task that documents the customer-facing API;
+this is the second paged endpoint, so the pattern became a pattern.
+
 ---
 
 ## Phase 9 — Evidence reports
