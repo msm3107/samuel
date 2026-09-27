@@ -386,6 +386,15 @@ somebody reviews. A whitelist bounds keys, not values — it is the reviewer of
 that migration, not the constraint, who is the last line against page content
 reaching the column.
 
+TASK-024 widened it once, as TASK-023 said it would, with what the inspection
+observes: `charset`, `widget_tags` and `widget_reason`. One key was asked for
+and refused — the deployment identifier found on the page. It is the most
+useful fact there is for a `DEPLOYMENT_ID_MISMATCH`, and it belongs to some
+other organization, so copying it into this organization's evidence row would
+be a cross-tenant leak through the one column §34 exists to protect. The count
+records that a wrong tag was there; support asks the customer which site they
+copied it from.
+
 Never mutate an existing verification check to change historical evidence.
 
 ### audit_events
@@ -999,6 +1008,72 @@ MVP verification should prefer HTML inspection when possible.
 
 Browser-based verification may be added later in an isolated execution environment.
 
+### What HTML inspection can answer, and what it cannot
+
+TASK-023 answers the first question: the fetch, its four bounds, and every
+refusal mapped to its own §19 code. TASK-024 answers the second and the third,
+and **the fourth is not answerable by HTML inspection at all** (owner,
+2026-09-27).
+
+The reason is the widget's own design. A visitor's browser loads
+`widget.js`, which asks this installation for the notice and renders it; the
+version it renders arrives from our endpoint after a `fetch`, so it is never in
+the customer's HTML. `DISCLOSURE_VERSION_MISMATCH` is therefore reserved and
+emitted by nothing, and `disclosure_version` is null in every row TASK-024
+produces. Resolving the version from our own database was the alternative and
+was refused: a success would then assert something the page never showed, and
+that column is documented as what was observed, not what was expected. A stale
+notice is indistinguishable from a current one until the isolated browser
+environment above exists. That is a launch limit, and it is written here rather
+than in a handoff because this is the section that asks the question.
+
+**Presence means our own script tag, served from our own host**: a `<script>`
+whose `src` resolves to this installation's host and `/widget.js`, carrying
+`data-deployment`. The HTML contains nothing else of ours, so the tag is the
+observable fact — and it carries both answerable questions in one place. The
+path comes from the same constant the dashboard builds the installation from,
+so verification cannot end up looking for a path nobody is given.
+
+A tag pointing at a **copy** of `widget.js` on the customer's own domain is not
+presence. The widget resolves its configuration endpoint from its own script
+URL, so a copy asks the customer's host for a notice, receives their 404, and
+renders nothing: the notice really is absent, and a success row would be false
+evidence in the direction that matters most. The failure records that this is
+what happened, because it is the one fact that says what to change. The scheme,
+the query and the fragment are not compared — a protocol-relative tag and a
+cache-busting `?v=2` both load our widget — because this is reading an
+installation, not authenticating a page.
+
+**A tag a browser would not run is not a tag that was found.** That covers
+where the tag sits and whether the element runs, and both halves are load
+bearing.
+
+The scan skips comments, doctypes and bogus comments, the raw-text contents of
+`script`, `style`, `textarea`, `title`, `xmp`, `iframe`, `noembed` and
+`noframes`, the contents of `noscript` (which needs scripting disabled, and our
+widget is a script), the contents of `template` (parsed, never executed),
+`svg` and `math` subtrees (another namespace, where `script` takes `href` rather
+than `src`), everything after `<plaintext>`, and anything inside a tag whose
+name the HTML tokenizer extends past `script` — `<script<x …>` is an element
+called `script<x`, which nothing runs.
+
+A tag in the right place still has to be one a browser would execute. Following
+the specification's "prepare the script element" steps, the element counts when
+its `type` is absent, empty, a JavaScript MIME type essence, or `module`, and
+when `nomodule` is absent from a classic script. `type="text/plain"` on
+otherwise perfect markup fetches nothing, so it is not an installation — and
+the failure says so specifically, because the customer's `src` is the one part
+they got right.
+
+A body whose `Content-Type` is not an HTML type is not scanned at all, for the
+same reason: a browser renders it as something other than a page.
+
+No HTML parser is installed to do this. §56 asks whether platform functionality
+can solve a problem before a dependency does, and the dependency here would
+exist to be fed hostile bytes from arbitrary websites inside our own process,
+to find one element by name. The scanner written instead is a tokenizer, not a
+parser, and its limits are listed in its own file.
+
 ---
 
 ## 19. Verification Failure Codes
@@ -1042,6 +1117,16 @@ the most common real failure there is. Without it that lands on
 exists to prevent. A failure at TLS specifically is usually invisible,
 because the verifier retries once over plain HTTP (§17) and the row records
 that HTTPS was tried and failed.
+
+`WIDGET_NOT_FOUND`, `DEPLOYMENT_ID_MISMATCH` and `DISCLOSURE_VERSION_MISMATCH`
+are the three an inspection could reach, and TASK-024 emits the first two. It
+adds no code to this list — all three were reserved by TASK-022 — but it does
+add a `widget_reason` to `metadata`, for the same reason `redirect_reason`
+exists: `WIDGET_NOT_FOUND` over "you have no tag", "your tag loads a copy from
+your own domain" and "your home page is a PDF" is one stored code over three
+different fixes, and this is the failure class a customer must act on. This
+section governs `failure_code`; three more codes here would force every
+consumer of the list to handle a detail about one of them.
 
 Do not rely on human-readable strings for application logic.
 

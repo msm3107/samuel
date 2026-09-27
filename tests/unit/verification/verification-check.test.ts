@@ -232,9 +232,10 @@ describe("VERIFICATION_METADATA_KEYS", () => {
     expect(parsed.success).toBe(false);
   });
 
-  it("accepts every key the fetch can produce, and an empty object", () => {
+  it("accepts every key a check can produce, and an empty object", () => {
     expect(
       verificationMetadataSchema.safeParse({
+        // The transport's (TASK-023).
         scheme: "http",
         https_failed: true,
         redirects: 2,
@@ -242,10 +243,28 @@ describe("VERIFICATION_METADATA_KEYS", () => {
         response_bytes: 4096,
         duration_ms: 812,
         content_type: "text/html; charset=utf-8",
+        redirect_reason: "SCHEME_DOWNGRADE",
+        // The inspection's (TASK-024).
+        charset: "windows-1252",
+        widget_tags: 1,
+        widget_reason: "FOREIGN_ORIGIN",
       }).success,
     ).toBe(true);
     // A check that failed at DNS observed none of them.
     expect(verificationMetadataSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("refuses a widget reason nobody defined", () => {
+    expect(
+      verificationMetadataSchema.safeParse({ widget_reason: "LOOKS_FINE" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("refuses a negative tag count", () => {
+    expect(
+      verificationMetadataSchema.safeParse({ widget_tags: -1 }).success,
+    ).toBe(false);
   });
 
   it("refuses a row whose metadata carries an unknown key", () => {
