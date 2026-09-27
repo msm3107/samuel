@@ -1074,6 +1074,38 @@ exist to be fed hostile bytes from arbitrary websites inside our own process,
 to find one element by name. The scanner written instead is a tokenizer, not a
 parser, and its limits are listed in its own file.
 
+### The schedule
+
+`GET /api/cron/verify`, authenticated by `CRON_SECRET` in an
+`Authorization: Bearer` header and compared in constant time. It is the only
+endpoint that acts with the service-role client on nobody's behalf, so it is the
+only one whose door is a shared secret.
+
+**A check window is one day** (owner, 2026-09-27). The window length is the
+storage policy as much as the schedule: `verification_checks` is never pruned,
+and `unique (deployment_id, check_window)` fixes the rate at one row per active
+deployment per window. So the evidence supports _checked daily_, not
+_continuously monitored_ — a notice can be absent for most of a day before any
+row says so. §72 already forbids the stronger claim; this is the weaker one
+stated plainly.
+
+**The window is not the tick.** The route is safe to call as often as you like:
+a deployment that already has a row for the window is no longer in the queue, so
+each tick drains part of it and none of them duplicates anything. Hourly is the
+recommended cadence, because one run is bounded — a batch, a concurrency cap,
+one in-flight request per hostname, and a wall-clock budget — and whatever it
+does not reach stays in the queue for the next one.
+
+**Nothing schedules it in this repository.** There is no `vercel.json` and no
+cron entry, deliberately: merging the verifier must not be the act that starts
+fetching real customer sites. Add the schedule when verification should begin.
+
+A deployment is checked only when a notice would render for it — active
+deployment, active AI system, live organization, current disclosure version, and
+that version enabled. That is the same predicate the public endpoint applies,
+and it is written once, in SQL, so the set we check and the set we serve cannot
+drift apart.
+
 ---
 
 ## 19. Verification Failure Codes

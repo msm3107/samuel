@@ -479,6 +479,38 @@ followed from that reasoning and are closed: `svg` and `math` subtrees,
 non-letter. What remains is all in the safe direction: a tag a browser would run
 and the scanner does not report.
 
+**Decisions taken in TASK-025** (owner, 2026-09-27), which close Phase 7. **A
+check window is one day** — the storage decision PR #39 note 1 deferred to this
+task, since evidence is never pruned and `unique (deployment_id, check_window)`
+fixes the rate at one row per active deployment per window. Daily is 365 rows a
+year against hourly's 8 760, and the honest consequence is recorded in README
+§18: the evidence supports _checked daily_, not _continuously monitored_.
+Shortening later is a configuration change; lengthening later leaves a
+permanently dense patch in append-only evidence, which is why the cheaper answer
+is the safer one to start from.
+
+**One invocation does a bounded batch under a wall-clock budget**, with a
+concurrency cap and **one in-flight fetch per hostname** — the per-host limit
+this phase has owed since TASK-023. A run that stops early leaves the deployments
+it did not reach with no row for the window, which is exactly the queue's
+definition of work to do; a run that dies mid-flight leaves work nobody can see.
+So the window and the tick are separate: the recommended cadence is hourly
+against a daily window, and each tick drains part of the queue.
+
+**The route ships and the schedule does not.** No `vercel.json` and no cron
+entry: merging the verifier must not be the act that starts fetching real
+customer sites, and the first real run should have a person behind it.
+
+**The queue is the only state.** No claim table, no lease, no cursor — the work
+item is the absence of a row, and the predicate for which deployments have
+anything to verify is the one `public.public_disclosure` already applies, written
+once in SQL so the set we check and the set we serve cannot drift apart.
+
+**§20's gap stops being hypothetical here.** The chain's columns exist and
+nothing writes them, and this is the task whose first run starts collecting
+evidence the chain will not cover. README §20 already says so; the sentence now
+has rows behind it.
+
 **A limit of the TASK-023 tests, stated rather than hidden.** The SSRF proofs
 use the real guarded lookup with a fake resolver, because no test machine can
 own 169.254.169.254; the transport proofs override the lookup to reach a real
