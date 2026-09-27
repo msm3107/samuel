@@ -62,6 +62,13 @@ const META_HTTP_EQUIV =
  * be tricked into reinterpreting a page's bytes. We render nothing and
  * execute nothing, so that attack has no target here — and honouring it would
  * guarantee a `WIDGET_NOT_FOUND` on a page we could otherwise read.
+ *
+ * That branch is unreachable on this Node: every label that would map to
+ * `replacement` throws instead, so the `catch` below is what handles them
+ * today. It is kept because the alternative is a silent behaviour change on a
+ * future runtime that does implement them — the page would start decoding to
+ * U+FFFD and the customer would start failing, with nothing in the diff to
+ * explain it.
  */
 function decoderFor(label: string | null): TextDecoder | null {
   if (label === null || label.trim() === "") {
@@ -111,6 +118,42 @@ export function charsetFromMeta(body: Buffer): string | null {
 }
 
 /**
+ * A decoder from a `<meta>` declaration, with the encoding standard's own
+ * substitutions applied (PR #41 review, note 2).
+ *
+ * The prescan says: if the encoding it determined is UTF-16BE or UTF-16LE,
+ * change it to UTF-8; if it is `x-user-defined`, change it to windows-1252.
+ * That rule exists because the misconfiguration is real — an ASCII page
+ * declaring `<meta charset="utf-16le">` is something sites do — and honouring
+ * the declaration literally decodes every `<script>` into CJK noise, which
+ * would record `WIDGET_NOT_FOUND` against a customer who complied.
+ *
+ * Scoped to this path on purpose. A byte order mark means the page really is
+ * UTF-16, and the substitution is specified for the prescan rather than for a
+ * `Content-Type` a server sent — so applying it to all three sources would be
+ * wrong in a different direction.
+ */
+function decoderFromMeta(body: Buffer): TextDecoder | null {
+  const label = charsetFromMeta(body);
+  if (label === null) {
+    return null;
+  }
+  // The substitution has to happen before the decoder is built, because this
+  // Node does not implement the `x-user-defined` label at all — asking for it
+  // throws, and the fall-through would land on UTF-8 rather than on the
+  // encoding the standard names.
+  const decoder = decoderFor(
+    label.trim().toLowerCase() === "x-user-defined" ? "windows-1252" : label,
+  );
+  if (decoder === null) {
+    return null;
+  }
+  return decoder.encoding === "utf-16le" || decoder.encoding === "utf-16be"
+    ? new TextDecoder(DEFAULT_CHARSET)
+    : decoder;
+}
+
+/**
  * The encoding a byte order mark declares, which no header and no `<meta>`
  * tag may override.
  */
@@ -149,7 +192,7 @@ export function decodeBody(
   const decoder =
     decoderFor(charsetFromMark(body)) ??
     decoderFor(charsetFromContentType(contentType)) ??
-    decoderFor(charsetFromMeta(body)) ??
+    decoderFromMeta(body) ??
     new TextDecoder(DEFAULT_CHARSET);
 
   return Object.freeze({

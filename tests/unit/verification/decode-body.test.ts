@@ -143,11 +143,16 @@ describe("decodeBody", () => {
     );
   });
 
-  it("falls through a label that maps onto the replacement encoding", () => {
+  it("falls through a label the standard maps onto the replacement encoding", () => {
     // The encoding standard maps ISO-2022-CN onto an encoding that turns every
     // byte into U+FFFD, to stop a browser being tricked into reinterpreting a
     // page. We render nothing and execute nothing, so honouring it would only
     // guarantee a WIDGET_NOT_FOUND on a page we can otherwise read.
+    //
+    // On this Node the label throws rather than resolving, so what this proves
+    // is the fall-through, not the `replacement` branch — which is kept for a
+    // future runtime that does implement it. Said plainly because the branch is
+    // otherwise a guard no test can reach.
     const { text, charset } = decodeBody(
       page("utf8"),
       "text/html; charset=iso-2022-cn",
@@ -183,6 +188,49 @@ describe("decodeBody", () => {
 
     expect(charset).toBe("utf-16le");
     expect(text).toContain('src="https://a/w.js"');
+  });
+
+  it("substitutes UTF-8 for a UTF-16 charset declared in a meta tag", () => {
+    // PR #41 review, note 2. The encoding standard specifies this substitution
+    // for the prescan because the misconfiguration is real: honouring it
+    // literally turns every <script> into CJK noise and records
+    // WIDGET_NOT_FOUND against a customer who complied.
+    for (const label of ["utf-16le", "utf-16be", "utf-16"]) {
+      const body = page("utf8", `<meta charset="${label}">`);
+      const { text, charset } = decodeBody(body, "text/html");
+
+      expect(charset).toBe(DEFAULT_CHARSET);
+      expect(text).toContain('src="https://a/w.js"');
+    }
+  });
+
+  it("substitutes windows-1252 for x-user-defined in a meta tag", () => {
+    // The adjacent clause of the same rule.
+    const body = page("latin1", '<meta charset="x-user-defined">');
+
+    expect(decodeBody(body, "text/html").charset).toBe("windows-1252");
+  });
+
+  it("does not substitute for a UTF-16 charset the server itself sent", () => {
+    // The rule is specified for the prescan, not for a Content-Type: a server
+    // that really serves UTF-16 and says so must be read as it says.
+    const body = Buffer.from(
+      '<script src="https://a/w.js"></script>',
+      "utf16le",
+    );
+
+    expect(decodeBody(body, "text/html; charset=utf-16le").charset).toBe(
+      "utf-16le",
+    );
+  });
+
+  it("does not substitute for a byte order mark, which is the page itself", () => {
+    const body = Buffer.concat([
+      Buffer.from([0xff, 0xfe]),
+      Buffer.from('<meta charset="utf-8">', "utf16le"),
+    ]);
+
+    expect(decodeBody(body, null).charset).toBe("utf-16le");
   });
 
   it("decodes an empty body without complaining", () => {

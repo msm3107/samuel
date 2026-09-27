@@ -122,7 +122,7 @@ Chosen by Mikołaj Smoliniec (project owner), 2026-09-27:
 
 ## Proposed by the implementer
 
-Awaiting sign-off.
+Sixteen. Fifteen proposed with the task and agreed on the PR #41 review with proposal 7 amended; proposal 16 came out of that review's blocking finding. Accepted by Mikołaj Smoliniec (project owner), 2026-09-27.
 
 1. **Three modules, not one.** `html-scan.ts` finds tags in bytes-turned-text
    and knows nothing about Article50.js; `decode-body.ts` turns bytes into
@@ -176,8 +176,12 @@ Awaiting sign-off.
    constant is the only way to be sure it does — a second copy of
    `"/widget.js"` is a way for the two to disagree silently, and the
    disagreement would show up as every customer failing at once.
-7. **A tag is ours by host and path, ignoring the scheme, the query and the
-   fragment.** The host as `URL` normalizes it, the pathname exactly
+7. **A tag is ours by host, path and executability, ignoring the scheme, the
+   query and the fragment.** Amended on the PR #41 review, which falsified the
+   original: host and path are not sufficient, because an element carrying both
+   and a non-JavaScript `type` loads nothing. The element must also be one a
+   browser would run — see proposal 16. The exclusions below stand unchanged.
+   The host as `URL` normalizes it, the pathname exactly
    `/widget.js`. Why ignore the scheme: a protocol-relative `//host/widget.js`
    on a plain-HTTP page resolves to `http://host/widget.js`, which is our
    widget — our host redirects to HTTPS and the browser follows. Why ignore
@@ -246,12 +250,115 @@ Awaiting sign-off.
     own instructions suggest putting it, and 1 MiB is already the bound
     TASK-023 accepted. Rejected: scanning the first 64 KiB (it would fail
     exactly the installation we recommend, on a heavy page).
+16. **A tag counts only if a browser would execute it.** Added on the PR #41
+    review, which found the blocking defect this closes. Following the
+    specification's "prepare the script element" steps: the element counts when
+    its `type` is absent, empty, a JavaScript MIME type essence, or `module`,
+    and when `nomodule` is absent from a classic script. Why the whole
+    sixteen-entry MIME list rather than the three anyone writes: every entry is
+    a spelling a browser executes, and omitting one would report a working
+    installation as missing. Both comparisons are trimmed and case-folded, so
+    `type=" TEXT/JavaScript "` passes — a customer's odd spelling is not a
+    finding. It lives in `inspect-page.ts` rather than in the scanner, because
+    the scanner is deliberately ignorant of Article50.js and returns tags for
+    any element name: "would a browser run this" is a question about our
+    matching rules. Rejected: folding the reason into `NO_WIDGET_SRC` (it would
+    send the customer to inspect the one part they got right) and reading
+    `type` in the tokenizer (it would make a generic scanner answer a question
+    about scripts).
+
+## Amendment: the PR #41 review
+
+Accepted by Mikołaj Smoliniec (project owner), 2026-09-27. One blocking
+finding and two notes; all three changed code, and the blocking one changed a
+proposal.
+
+- **Blocking: a one-attribute edit recorded a success for a page that displays
+  no notice. Fixed.** Nothing looked at `type` or `nomodule`, so
+  `type="text/plain"` on the exact tag the dashboard hands out gave
+  `ok: true`, `widgetDetected: true`, `widget_tags: 1` — and TASK-025 would
+  have written an append-only, never-expiring record asserting a disclosure was
+  present. Per the specification's "prepare the script element" steps a `type`
+  that is neither empty, nor a JavaScript MIME type, nor `module` gives the
+  element a null script type and the algorithm returns: the external script is
+  never fetched. `type="application/json"`, `type="text/template"` and
+  `nomodule` on a classic script do the same. Closed by proposal 16, reported as
+  `TAG_NOT_EXECUTED` — the eighth `widget_reason`, which costs nothing in the
+  database because the migration whitelists the key and the row schema bounds
+  the value. Proposal 7 is amended, because the finding falsified it: host and
+  path are not sufficient for "ours".
+
+  Two things about this are worth keeping on the record. It was **the one error
+  the module declares it must not make**, and it was **the invariant the
+  contract states outright** — stated, and enforced on only one of its two
+  halves. And the test suite showed the shape of the gap: eight cases in "a page
+  that carries the text of an installation but renders none", every one varying
+  _where_ the tag sits and none varying _whether the element runs_. A complete
+  enumeration along one axis reads like thoroughness, which is what made the
+  missing axis invisible. The axis is now a block of its own, with the negative
+  and positive directions beside each other.
+
+- **Note 1, four more inputs where the scanner reported a tag a browser would
+  not run. All four fixed.** A `<script src>` inside `<svg>` or `<math>` (another
+  namespace, where `script` takes `href`), `<script<x …>` (the tokenizer appends
+  the `<` to the name, making an unknown element), `</ <script …>` (a bogus
+  comment, which swallows to the first `>`), and anything after `<plaintext>`.
+  Fixed in the reviewer's order: the tag-open rule first, because it is
+  spec-accurate rather than a special case and closes two of the four — after
+  `<`, only an ASCII letter starts a tag, and `<` then becomes legal _inside_ a
+  name; after `</`, a non-letter is a bogus comment. Then a `foreignDepth`
+  counter for `svg`/`math`, written the way `templateDepth` already is, because
+  reading the tags is what keeps the tokenizer honest about what closes what.
+  Then `plaintext`, which ends the scan. A self-closing `<svg/>` opens no
+  subtree, because the solidus an HTML element ignores does close a foreign one
+  — without that, one narrow false positive would have become a page-wide false
+  negative.
+
+  The reasoning this replaces is worth naming, because it was the actual defect
+  behind three of the four. The module's own comment discounted its limits as
+  unreachable "by a page that is merely unusual rather than deliberate". For
+  this module **deliberate is the threat model**: a customer who wants the
+  record to say compliant without disclosing anything is precisely who it
+  exists to catch. A limit here is a cost to be paid down, not a risk to be
+  discounted. The limits that remain are all in the safe direction — `svg` and
+  `math` are skipped whole, so a script inside one of their HTML integration
+  points is missed, which is a false negative on a page nobody serves.
+
+- **Note 2, a `<meta charset="utf-16le">` on an ASCII page was honoured. Fixed
+  on the `<meta>` path only.** The encoding standard's prescan substitutes UTF-8
+  for UTF-16BE/LE and windows-1252 for `x-user-defined`; the rule exists because
+  the misconfiguration is real, and honouring the declaration literally decodes
+  every `<script>` into noise and records `WIDGET_NOT_FOUND` against a customer
+  who complied. Scoped there deliberately: a byte order mark means the page
+  really is UTF-16, and the rule is specified for the prescan rather than for a
+  `Content-Type` a server sent, so applying it to all three sources would be
+  wrong in the other direction.
+
+  Fixing it surfaced two dead branches, both now honest. This Node's
+  `TextDecoder` rejects `x-user-defined` outright, so the substitution has to
+  happen before the decoder is built rather than after. And no label reaches the
+  `replacement` encoding at all — every one of them throws — so the
+  `encoding === "replacement"` guard is unreachable today, and the test that
+  appeared to cover it was passing through the `catch`. The guard is kept, for a
+  future runtime that does implement those labels: without it, an upgrade would
+  silently start decoding such pages to U+FFFD and failing the customers who
+  serve them, with nothing in the diff to explain it. The comment and the test
+  now say which path actually runs.
+
+One thing the review corrected about the review itself, recorded because the
+reviewer volunteered it: on PR #40 note 4 it had asked for a catch-all and now
+says the opposite — keeping the rejection was right, because a catch-all there
+would have manufactured exactly the false evidence the rest of that review
+argued against.
 
 ## Invariants
 
 - No fetched byte is executed, `eval`-ed, or passed to a parser that could
   execute one. The scanner reads text and returns tag names and attributes.
-- A tag that a browser would not run is not a tag that was found.
+- A tag that a browser would not run is not a tag that was found. Two
+  independent halves: the tokenizer decides where a tag may sit, and
+  `isExecutable` decides whether the element runs. The PR #41 review found this
+  invariant stated and only half enforced.
 - `metadata` gains keys only through a migration that names them, and every
   stored value comes from a fixed vocabulary or is a number.
 - No identifier read off the customer's page is ever stored.

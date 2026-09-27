@@ -124,6 +124,86 @@ function scriptUrl(tag: HtmlTag, pageUrl: string): URL | null {
 }
 
 /**
+ * The MIME type essences that make a `<script>` a classic script, from the
+ * HTML specification's own list.
+ *
+ * The whole list rather than the three anyone writes, because every entry here
+ * is a spelling a browser executes: leaving one out would report an
+ * installation that works as missing, and a false failure is recorded against a
+ * customer who complied.
+ */
+const JAVASCRIPT_TYPES = new Set([
+  "application/ecmascript",
+  "application/javascript",
+  "application/x-ecmascript",
+  "application/x-javascript",
+  "text/ecmascript",
+  "text/javascript",
+  "text/javascript1.0",
+  "text/javascript1.1",
+  "text/javascript1.2",
+  "text/javascript1.3",
+  "text/javascript1.4",
+  "text/javascript1.5",
+  "text/jscript",
+  "text/livescript",
+  "text/x-ecmascript",
+  "text/x-javascript",
+]);
+
+/**
+ * Whether a browser would run this element at all, following the
+ * specification's "prepare the script element" steps (PR #41 review, blocking
+ * finding).
+ *
+ * This is the rule the module was missing, and its absence was the one error it
+ * declares it must not make: `type="text/plain"` on the exact tag the dashboard
+ * hands out gives the element a null script type, so the algorithm returns and
+ * **the external script is never fetched**. No widget loads, no notice renders —
+ * and without this, the row said the disclosure was present. `type="module"`
+ * runs, `type="application/json"` does not, and `nomodule` on a classic script
+ * does not run in any browser that supports modules, which is all of them.
+ *
+ * The check lives here rather than in `html-scan.ts` because the scanner is
+ * deliberately ignorant of Article50.js and returns tags for any element name:
+ * "would a browser run this" is a question about our matching rules, which is
+ * where the strictness already lives.
+ */
+function scriptKind(tag: HtmlTag): "classic" | "module" | null {
+  const type = tag.attributes.get("type");
+  // The specification's "script block's type string": an absent `type` falls
+  // back to the legacy `language` attribute, which is still honoured.
+  const declared =
+    type === undefined
+      ? languageType(tag.attributes.get("language"))
+      : type.trim();
+
+  if (declared === "") {
+    return "classic";
+  }
+  // Both comparisons are ASCII case-insensitive, so `TEXT/JavaScript` with a
+  // trailing space still runs — a customer's odd spelling is not a finding.
+  const essence = declared.toLowerCase();
+  if (essence === "module") {
+    return "module";
+  }
+  return JAVASCRIPT_TYPES.has(essence) ? "classic" : null;
+}
+
+/** `language="javascript"` reads as `text/javascript`; `language=""` as absent. */
+function languageType(language: string | undefined): string {
+  return language === undefined || language === "" ? "" : `text/${language}`;
+}
+
+function isExecutable(tag: HtmlTag): boolean {
+  const kind = scriptKind(tag);
+  // `nomodule` is ignored on a module script and fatal to a classic one.
+  return (
+    kind === "module" || (kind === "classic" && !tag.attributes.has("nomodule"))
+  );
+}
+
+/**
  * Whether a tag loads this installation's widget.
  *
  * The host as `URL` normalizes it, and the path exactly. The scheme, the query
@@ -153,16 +233,27 @@ function isForeignWidget(url: URL | null, expected: URL): boolean {
 }
 
 /**
- * Why no tag of ours was found, from the most actionable observation
- * available. `FOREIGN_ORIGIN` comes first because it is the most specific: a
- * tag that both carries an identifier and loads a copy is a copy, and that is
- * the thing to fix.
+ * Why no tag of ours was found, from the most specific observation available.
+ *
+ * `TAG_NOT_EXECUTED` comes first because it is the most specific of all: the
+ * `src` is right, the position is right, and one attribute stops the browser
+ * running it — telling that customer to check their `src` would send them
+ * looking at the one thing they got right. `FOREIGN_ORIGIN` is next, because a
+ * tag that both carries an identifier and loads a copy is a copy.
  */
 function absenceReason(
   tags: readonly HtmlTag[],
   pageUrl: string,
   expected: URL,
 ): WidgetReason {
+  if (
+    tags.some(
+      (tag) =>
+        isOurWidget(scriptUrl(tag, pageUrl), expected) && !isExecutable(tag),
+    )
+  ) {
+    return "TAG_NOT_EXECUTED";
+  }
   if (tags.some((tag) => isForeignWidget(scriptUrl(tag, pageUrl), expected))) {
     return "FOREIGN_ORIGIN";
   }
@@ -229,8 +320,12 @@ export function inspectVerificationPage(
   const expected = new URL(WIDGET_PATH, serverEnv().NEXT_PUBLIC_APP_URL);
   const { text, charset } = decodeBody(page.body, contentType);
   const tags = findHtmlTags(text, "script");
-  const ours = tags.filter((tag) =>
-    isOurWidget(scriptUrl(tag, page.finalUrl), expected),
+  // Both halves are required: a tag that loads our widget, on an element a
+  // browser would actually run. `widget_tags` therefore counts installations
+  // that work, not tags that look right.
+  const ours = tags.filter(
+    (tag) =>
+      isOurWidget(scriptUrl(tag, page.finalUrl), expected) && isExecutable(tag),
   );
 
   const metadata: VerificationMetadata = {

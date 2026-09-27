@@ -147,6 +147,12 @@ describe("a page that carries the text of an installation but renders none", () 
     ["a noscript block", `<noscript>${installation()}</noscript>`],
     ["a template", `<template>${installation()}</template>`],
     ["another tag's attribute", `<div title='${installation()}'></div>`],
+    // PR #41 review, note 1: these four vary the same axis as the rest — where
+    // the tag sits — and each was reported as a tag a browser would not run.
+    ["an svg subtree, where script takes href", `<svg>${installation()}</svg>`],
+    ["a math subtree", `<math>${installation()}</math>`],
+    ["a bogus comment opened by </ ", `</ ${installation()}`],
+    ["text after plaintext, which never ends", `<plaintext>${installation()}`],
   ])("is not compliant when the tag is inside %s", (_where, body) => {
     const result = inspectVerificationPage(fetched(html(body)), OURS);
 
@@ -156,6 +162,60 @@ describe("a page that carries the text of an installation but renders none", () 
       widgetDetected: false,
     });
     expect(result.metadata.widget_tags).toBe(0);
+  });
+
+  /**
+   * The axis the block above was missing (PR #41 review, blocking finding).
+   * Every case there varies *where* the tag sits; none varied *whether the
+   * element runs* — and one attribute on the tag the dashboard hands out was
+   * enough to record a success for a page that displays no notice.
+   */
+  it.each([
+    ["type=text/plain", { type: "text/plain" }],
+    ["type=application/json", { type: "application/json" }],
+    ["type=text/template", { type: "text/template" }],
+    ["type=module/x, a near miss", { type: "module/x" }],
+    ["a language a browser does not run", { language: "vbscript" }],
+    ["nomodule on a classic script", { nomodule: "" }],
+  ])("is not compliant with %s, which fetches nothing", (_what, extra) => {
+    const attributes = Object.entries(extra)
+      .map(([name, value]) =>
+        value === "" ? ` ${name}` : ` ${name}="${value}"`,
+      )
+      .join("");
+    const tag = `<script src="${widgetUrl}" data-deployment="${OURS}"${attributes}></script>`;
+    const result = inspectVerificationPage(fetched(html(tag)), OURS);
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: "WIDGET_NOT_FOUND",
+      widgetDetected: false,
+      // Not NO_WIDGET_SRC: the src is the one part they got right.
+      reason: "TAG_NOT_EXECUTED",
+    });
+    // No installation on the page loads the widget, and the reason says why.
+    expect(result.metadata.widget_tags).toBe(0);
+  });
+
+  it.each([
+    ["no type at all", ""],
+    ["an empty type", ' type=""'],
+    ["a type of only whitespace", ' type="  "'],
+    ["text/javascript", ' type="text/javascript"'],
+    ["odd casing and a trailing space", ' type=" TEXT/JavaScript "'],
+    ["a legacy essence", ' type="application/x-ecmascript"'],
+    ["text/jscript", ' type="text/jscript"'],
+    ["module", ' type="module"'],
+    ["module with nomodule, which is ignored", ' type="module" nomodule'],
+    ["language=javascript", ' language="javascript"'],
+    ["an empty language", ' language=""'],
+    ["async and defer, which change only when it runs", " async defer"],
+  ])("is compliant with %s, which a browser does run", (_what, attribute) => {
+    // The other direction of the same finding: a customer's odd but valid
+    // spelling must not become a false failure.
+    const tag = `<script src="${widgetUrl}" data-deployment="${OURS}"${attribute}></script>`;
+
+    expect(inspectVerificationPage(fetched(html(tag)), OURS).ok).toBe(true);
   });
 
   it("says nothing was found rather than that a tag was seen", () => {

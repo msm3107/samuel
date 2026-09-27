@@ -177,6 +177,65 @@ describe("findHtmlTags: what a browser would not run", () => {
     expect(attributesOf('</><script src="a">')).toEqual([{ src: "a" }]);
   });
 
+  it("does not find a tag whose name the tokenizer extends past 'script'", () => {
+    // The tag-name state appends the `<`, so this element is `script<x`, which
+    // no browser runs (PR #41 review, note 1).
+    expect(attributesOf('<script<x src="a">')).toEqual([]);
+  });
+
+  it("still finds a real tag after a stray opening bracket", () => {
+    // The other half of the same rule: `<` not followed by an ASCII letter is
+    // text, so the tag on the next character is found.
+    expect(attributesOf('<<script src="a">')).toEqual([{ src: "a" }]);
+  });
+
+  it.each([
+    ["a space", "</ "],
+    ["a digit", "</1"],
+    ["a bracket", "</<"],
+  ])("swallows a bogus comment opened by an end tag with %s", (_what, open) => {
+    // `</` followed by anything but a letter enters the bogus-comment state,
+    // which runs to the first `>` — taking the tag written inside it.
+    expect(attributesOf(`${open}<script src="a">`)).toEqual([]);
+  });
+
+  it("does not find a tag inside an svg or math subtree", () => {
+    // Foreign content: `script` there takes `href`, not `src`, so a browser
+    // fetches nothing.
+    expect(attributesOf('<svg><script src="a"></script></svg>')).toEqual([]);
+    expect(attributesOf('<math><script src="a"></script></math>')).toEqual([]);
+  });
+
+  it("does not find a tag inside a nested foreign subtree", () => {
+    expect(
+      attributesOf('<svg><g><math><script src="a"></script></math></g></svg>'),
+    ).toEqual([]);
+  });
+
+  it("finds a tag after a foreign subtree has closed", () => {
+    expect(attributesOf('<svg><circle/></svg><script src="a">')).toEqual([
+      { src: "a" },
+    ]);
+  });
+
+  it("treats a self-closing svg as closed, which it is in foreign content", () => {
+    // The solidus an HTML element ignores really does close a foreign one.
+    // Counting it as open would silence every tag on the rest of the page —
+    // trading a narrow false positive for a broad false negative.
+    expect(attributesOf('<svg/><script src="a">')).toEqual([{ src: "a" }]);
+    expect(attributesOf('<math/><script src="a">')).toEqual([{ src: "a" }]);
+  });
+
+  it("finds nothing after plaintext, which never ends", () => {
+    expect(attributesOf('<plaintext><script src="a"></script>')).toEqual([]);
+  });
+
+  it("finds a tag written before plaintext", () => {
+    expect(
+      attributesOf('<script src="a"></script><plaintext><script src="b">'),
+    ).toEqual([{ src: "a" }]);
+  });
+
   it("finds nothing in an empty document or one with no script", () => {
     expect(attributesOf("")).toEqual([]);
     expect(attributesOf("<html><body><p>hello</p></body></html>")).toEqual([]);

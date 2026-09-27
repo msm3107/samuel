@@ -100,7 +100,7 @@ export type VerificationFailureCode =
  * and what a row may store is already declared here, `VERIFICATION_FAILURE_CODES`
  * included. One list, no second copy to drift.
  *
- * Privacy-safe by construction: seven fixed strings, no customer data.
+ * Privacy-safe by construction: eight fixed strings, no customer data.
  */
 export const WIDGET_REASONS = [
   /** The body was not HTML, so nothing was scanned. */
@@ -115,6 +115,15 @@ export const WIDGET_REASONS = [
   "FOREIGN_ORIGIN",
   /** A tag carries `data-deployment` but its `src` loads no widget of ours. */
   "NO_WIDGET_SRC",
+  /**
+   * A tag loads our widget from the right place, on an element a browser would
+   * never run — `type="text/plain"`, `type="application/json"`, `nomodule` on a
+   * classic script (PR #41 review, blocking finding). The installation looks
+   * exactly right and fetches nothing, so this is the reason that must not
+   * collapse into `NO_WIDGET_SRC`: that would send the customer to inspect the
+   * one part they got right.
+   */
+  "TAG_NOT_EXECUTED",
   /** Our widget is loaded by a tag carrying no `data-deployment` at all. */
   "NO_DEPLOYMENT_ID",
   /** It carries one that is not a deployment identifier. */

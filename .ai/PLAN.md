@@ -458,6 +458,27 @@ most useful fact there is for a `DEPLOYMENT_ID_MISMATCH`, and it belongs to
 another organization — storing it would be a cross-tenant leak through the one
 column §34 exists to protect.
 
+**Found on the PR #41 review, and it is the finding to remember from Phase 7**
+(owner, 2026-09-27). "Was Article50.js present" was answered by _where the tag
+sits_ and not by _whether the element runs_, so `type="text/plain"` on the exact
+tag the dashboard hands out produced a success — and TASK-025 would have written
+an append-only, never-expiring record asserting a disclosure was present on a
+page that displays none. The specification's "prepare the script element" steps
+are now applied, reported as `TAG_NOT_EXECUTED`. Two lessons worth carrying into
+TASK-025 and Phase 8: an invariant can be written down and enforced on only half
+of itself, and a test suite that enumerates one axis completely reads as
+thorough, which is what hides the axis nobody enumerated.
+
+**And a piece of reasoning retired.** The scanner's limits were discounted as
+unreachable "by a page that is merely unusual rather than deliberate". For the
+verifier, deliberate _is_ the threat model — a customer who wants the record to
+say compliant without disclosing anything is exactly who it exists to catch — so
+a limit there is a cost to pay down, not a risk to discount. Four more inputs
+followed from that reasoning and are closed: `svg` and `math` subtrees,
+`<plaintext>`, `<script<x …>`, and a bogus comment opened by `</` and a
+non-letter. What remains is all in the safe direction: a tag a browser would run
+and the scanner does not report.
+
 **A limit of the TASK-023 tests, stated rather than hidden.** The SSRF proofs
 use the real guarded lookup with a fake resolver, because no test machine can
 own 169.254.169.254; the transport proofs override the lookup to reach a real

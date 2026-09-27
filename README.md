@@ -1044,14 +1044,29 @@ the query and the fragment are not compared — a protocol-relative tag and a
 cache-busting `?v=2` both load our widget — because this is reading an
 installation, not authenticating a page.
 
-**A tag a browser would not run is not a tag that was found.** The scan skips
-comments, doctypes, the raw-text contents of `script`, `style`, `textarea`,
-`title`, `xmp`, `iframe`, `noembed` and `noframes`, the contents of `noscript`
-(which needs scripting disabled, and our widget is a script), and the contents
-of `template` (parsed, never executed). Each of those is a way to carry the
-text of an installation while showing a visitor nothing. A body whose
-`Content-Type` is not an HTML type is not scanned at all, for the same reason: a
-browser renders it as something other than a page.
+**A tag a browser would not run is not a tag that was found.** That covers
+where the tag sits and whether the element runs, and both halves are load
+bearing.
+
+The scan skips comments, doctypes and bogus comments, the raw-text contents of
+`script`, `style`, `textarea`, `title`, `xmp`, `iframe`, `noembed` and
+`noframes`, the contents of `noscript` (which needs scripting disabled, and our
+widget is a script), the contents of `template` (parsed, never executed),
+`svg` and `math` subtrees (another namespace, where `script` takes `href` rather
+than `src`), everything after `<plaintext>`, and anything inside a tag whose
+name the HTML tokenizer extends past `script` — `<script<x …>` is an element
+called `script<x`, which nothing runs.
+
+A tag in the right place still has to be one a browser would execute. Following
+the specification's "prepare the script element" steps, the element counts when
+its `type` is absent, empty, a JavaScript MIME type essence, or `module`, and
+when `nomodule` is absent from a classic script. `type="text/plain"` on
+otherwise perfect markup fetches nothing, so it is not an installation — and
+the failure says so specifically, because the customer's `src` is the one part
+they got right.
+
+A body whose `Content-Type` is not an HTML type is not scanned at all, for the
+same reason: a browser renders it as something other than a page.
 
 No HTML parser is installed to do this. §56 asks whether platform functionality
 can solve a problem before a dependency does, and the dependency here would

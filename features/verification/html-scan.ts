@@ -34,17 +34,40 @@
  *   can never render a notice.
  * - **`template`** contents, which are parsed as markup but belong to a
  *   fragment that never executes.
+ * - **`svg` and `math`** subtrees, parsed in another namespace where `script`
+ *   takes an `href` rather than a `src`, so a `<script src>` there fetches
+ *   nothing.
+ * - **Everything after `<plaintext>`**, which is text for the rest of the
+ *   document in every browser.
+ * - **`<script<x …>`**, an element called `script<x`: the tokenizer's tag-name
+ *   state appends the `<`, and no browser runs an unknown element.
+ * - **A bogus comment**: `</` followed by anything but an ASCII letter swallows
+ *   everything to the first `>`.
  *
  * ## Its limits, stated rather than discovered
  *
- * It does not know that `</template>` inside a raw-text element is text, it
- * cannot know that a subtree was discarded by a real parser's error
- * handling, and it treats `<script/>` in foreign content (inside `<svg>`)
- * like any other script start tag. Each of those makes it find a tag a
- * browser would not run, which is the direction that records a success
- * wrongly — so each is a reason to keep the matching in
- * `inspect-page.ts` strict, and none of them can be reached by a page that
- * is merely unusual rather than deliberate.
+ * It does not know that `</template>` inside a raw-text element is text, and it
+ * cannot know that a subtree was discarded by a real parser's error handling.
+ * Both make it find a tag a browser would not run, which is the direction that
+ * records a success wrongly — so both are reasons to keep the matching in
+ * `inspect-page.ts` strict.
+ *
+ * What is **not** an excuse for such a limit: that reaching it takes a
+ * deliberately built page. An earlier version of this comment said the limits
+ * were unreachable "by a page that is merely unusual rather than deliberate",
+ * and the PR #41 review was right to reject that reasoning. For this module
+ * deliberate *is* the threat model: a customer who wants the record to say
+ * compliant without disclosing anything is precisely who it exists to catch. A
+ * limit here is a cost to be paid down, not a risk to be discounted.
+ *
+ * The limits that remain are therefore all in the safe direction — a tag a
+ * browser *would* run and this does not report. `svg` and `math` are skipped
+ * whole, so a script inside one of their HTML integration points (`mtext`,
+ * `mi`, `mo`, `mn`, `ms`, `annotation-xml` with `encoding="text/html"`,
+ * `foreignObject`, `desc`, `title`) is missed, because parsing resumes as HTML
+ * there. That is a false negative on a page nobody serves, and a customer who
+ * hits it can dispute the check — where the opposite error writes a compliance
+ * record that is simply untrue.
  */
 
 /** A start tag, with its attribute names lowercased. */
@@ -73,6 +96,13 @@ const RAW_TEXT = new Set([
   "noframes",
   "noscript",
 ]);
+
+/**
+ * The elements whose contents are parsed in another namespace, where `script`
+ * takes an `href` rather than a `src` — so a `<script src>` written inside one
+ * fetches nothing and renders no notice (PR #41 review, note 1).
+ */
+const FOREIGN = new Set(["svg", "math"]);
 
 /** ASCII whitespace, as the HTML tokenizer defines it. */
 const WHITESPACE = new Set([" ", "\t", "\n", "\f", "\r"]);
@@ -143,17 +173,41 @@ function codePoint(value: number): string | null {
   return String.fromCodePoint(value);
 }
 
-/** Where a tag name ends. */
-function isNameCharacter(character: string): boolean {
+/**
+ * Whether a tag name may begin here. Only an ASCII letter opens a tag: `<`
+ * followed by anything else is text, and `</` followed by anything else is a
+ * bogus comment (PR #41 review, note 1).
+ */
+function isAsciiLetter(character: string): boolean {
   return (
-    !WHITESPACE.has(character) &&
-    character !== "/" &&
-    character !== ">" &&
-    character !== "<"
+    (character >= "a" && character <= "z") ||
+    (character >= "A" && character <= "Z")
   );
 }
 
-type TagBody = Readonly<{ attributes: Map<string, string>; end: number }>;
+/**
+ * Where a tag name ends: whitespace, a solidus or `>`.
+ *
+ * `<` is deliberately **not** a terminator, because the tokenizer's tag-name
+ * state appends it to the name — so `<script<x …>` is an element called
+ * `script<x`, which no browser runs. Treating `<` as a terminator would have
+ * read it as a `script` tag with attributes (PR #41 review, note 1); the
+ * `isAsciiLetter` gate at the tag-open state is what keeps `<<script src=x>`
+ * working instead.
+ */
+function isNameCharacter(character: string): boolean {
+  return !WHITESPACE.has(character) && character !== "/" && character !== ">";
+}
+
+type TagBody = Readonly<{
+  attributes: Map<string, string>;
+  end: number;
+  /**
+   * Whether the tag ended with `/>`. Ignored for an HTML element, but it really
+   * does close a foreign one, so `<svg/>` opens no subtree.
+   */
+  selfClosing: boolean;
+}>;
 
 /**
  * Reads a start tag's attributes, from just after its name to just after its
@@ -165,6 +219,7 @@ type TagBody = Readonly<{ attributes: Map<string, string>; end: number }>;
 function readTagBody(html: string, from: number): TagBody {
   const attributes = new Map<string, string>();
   let index = from;
+  let selfClosing = false;
 
   while (index < html.length) {
     while (index < html.length && WHITESPACE.has(html[index] ?? "")) {
@@ -179,9 +234,15 @@ function readTagBody(html: string, from: number): TagBody {
       break;
     }
     // A solidus anywhere in a start tag is ignored for HTML elements, `/>`
-    // included: `<script/>` still opens a script element.
+    // included: `<script/>` still opens a script element. It is recorded
+    // anyway, because the same `/>` does close a foreign element.
     if (character === "/") {
       index += 1;
+      if (html[index] === ">") {
+        index += 1;
+        selfClosing = true;
+        break;
+      }
       continue;
     }
 
@@ -241,7 +302,7 @@ function readTagBody(html: string, from: number): TagBody {
     }
   }
 
-  return { attributes, end: index };
+  return { attributes, end: index, selfClosing };
 }
 
 /** Past a comment, whether or not it was ever closed. */
@@ -312,6 +373,15 @@ export function findHtmlTags(html: string, name: string): readonly HtmlTag[] {
    * what) and simply not reported.
    */
   let templateDepth = 0;
+  /**
+   * How deep inside `<svg>` or `<math>` we are. Their contents are parsed in
+   * another namespace, where `script` takes `href` rather than `src` — so a
+   * `<script src>` there fetches nothing, and a browser renders no notice
+   * (PR #41 review, note 1). Counted the same way as `template`, for the same
+   * reason: reading the tags is what keeps the tokenizer honest about what
+   * closes what.
+   */
+  let foreignDepth = 0;
   let index = 0;
 
   while (index < html.length) {
@@ -335,8 +405,18 @@ export function findHtmlTags(html: string, name: string): readonly HtmlTag[] {
     }
 
     const closing = marker === "/";
+    // The tag-open state: only an ASCII letter starts a tag name. `<` followed
+    // by anything else is literal text, and `</` followed by anything else is a
+    // bogus comment — which a browser swallows to the first `>`, taking any tag
+    // written inside it with it.
     if (closing) {
+      if (!isAsciiLetter(html[index + 1] ?? "")) {
+        index = skipToTagEnd(html, index + 1);
+        continue;
+      }
       index += 1;
+    } else if (!isAsciiLetter(marker)) {
+      continue;
     }
 
     const nameStart = index;
@@ -344,10 +424,6 @@ export function findHtmlTags(html: string, name: string): readonly HtmlTag[] {
       index += 1;
     }
     const tagName = html.slice(nameStart, index).toLowerCase();
-    if (tagName === "") {
-      // `<` followed by anything else is text, and `</>` is discarded.
-      continue;
-    }
 
     const body = readTagBody(html, index);
     index = body.end;
@@ -356,7 +432,16 @@ export function findHtmlTags(html: string, name: string): readonly HtmlTag[] {
       if (tagName === "template" && templateDepth > 0) {
         templateDepth -= 1;
       }
+      if (FOREIGN.has(tagName) && foreignDepth > 0) {
+        foreignDepth -= 1;
+      }
       continue;
+    }
+
+    if (tagName === "plaintext") {
+      // Everything after it is text, forever: there is no end tag, and no
+      // markup can follow it in any browser.
+      break;
     }
 
     if (tagName === "template") {
@@ -364,7 +449,17 @@ export function findHtmlTags(html: string, name: string): readonly HtmlTag[] {
       continue;
     }
 
-    if (tagName === name && templateDepth === 0) {
+    if (FOREIGN.has(tagName)) {
+      // `<svg/>` really does self-close in foreign content, where the solidus
+      // an HTML element ignores is honoured. Counting it as an open subtree
+      // would silence every tag on the rest of the page.
+      if (!body.selfClosing) {
+        foreignDepth += 1;
+      }
+      continue;
+    }
+
+    if (tagName === name && templateDepth === 0 && foreignDepth === 0) {
       found.push(Object.freeze({ name: tagName, attributes: body.attributes }));
     }
 
