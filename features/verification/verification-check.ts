@@ -33,9 +33,17 @@ export type VerificationStatus = (typeof VERIFICATION_STATUSES)[number];
  * Phase 7 requires each exceeded bound to map to its own code, and a
  * connection that never opened is a different fact from one that opened and
  * never finished.
+ *
+ * `CONNECTION_FAILED` is added in TASK-023, and it is the one code here that
+ * is not about a bound. The name resolved and the connection was refused,
+ * reset, unreachable, or rejected at TLS — a site that is simply down, which
+ * is the most common real failure there is. Without it that lands on
+ * `UNKNOWN_ERROR`, which tells a customer nothing and is exactly what §19
+ * exists to prevent. Proposed by the implementer, awaiting sign-off.
  */
 export const VERIFICATION_FAILURE_CODES = [
   "DNS_ERROR",
+  "CONNECTION_FAILED",
   "CONNECTION_TIMEOUT",
   "TOTAL_TIMEOUT",
   "HTTP_ERROR",
@@ -51,6 +59,82 @@ export const VERIFICATION_FAILURE_CODES = [
 
 export type VerificationFailureCode =
   (typeof VERIFICATION_FAILURE_CODES)[number];
+
+/**
+ * What `metadata` may hold: facts about the check, never content from the
+ * customer's page (owner, 2026-09-26; README §34).
+ *
+ * From TASK-023 this is a whitelist rather than a habit. The same key names
+ * are written out in
+ * `supabase/migrations/20260927100000_verification_metadata_keys.sql`, where
+ * a check constraint refuses anything else, and a unit test keeps the two
+ * equal in both directions. The strictness is the point: a page excerpt fits
+ * comfortably inside the 2048-byte size cap TASK-022 set, so size was never
+ * what stopped page content getting in (PR #39 review, note 4).
+ *
+ * Every key is optional, because a check that failed at DNS observed none of
+ * them. TASK-024 adds the inspection keys — which matcher failed, and what
+ * it looked for — in its own migration.
+ *
+ * The reviewer's own limitation is worth repeating here, where a future
+ * writer will meet it: a whitelist bounds keys, not values. Nothing stops a
+ * caller putting a page excerpt in `content_type`; what it stops is a new
+ * key nobody reviewed.
+ */
+const REDIRECT_REASONS = [
+  "INVALID_LOCATION",
+  "UNSUPPORTED_SCHEME",
+  "SCHEME_DOWNGRADE",
+  "EMBEDDED_CREDENTIALS",
+  "PRIVATE_NETWORK_BLOCKED",
+  "IP_ADDRESS_NOT_ALLOWED",
+  "PORT_NOT_ALLOWED",
+] as const;
+
+export const verificationMetadataSchema = z.strictObject({
+  /** Which scheme answered. Plain HTTP is weaker evidence, so it is stored. */
+  scheme: z.enum(["https", "http"]).optional(),
+  /** Whether HTTPS was tried first and failed (owner, 2026-09-27). */
+  https_failed: z.boolean().optional(),
+  /** How many hops were followed. */
+  redirects: z.int().min(0).optional(),
+  /** The hostname the body came from, which a chain may have changed. */
+  final_host: z.string().max(253).optional(),
+  /** Bytes of body read, after decompression. */
+  response_bytes: z.int().min(0).optional(),
+  /** How long the whole attempt took, including any HTTPS attempt. */
+  duration_ms: z.int().min(0).optional(),
+  /** The `Content-Type` header as given, so a PDF home page is explicable. */
+  content_type: z.string().max(256).optional(),
+  /**
+   * Which of the seven redirect rules refused a hop (PR #40 review, note 2).
+   * `REDIRECT_BLOCKED` is one stored code over six causes that need six
+   * different fixes — a stray `ftp://`, a `:8443`, credentials in a
+   * `Location`, a bare IP, a malformed header, a downgrade — and this is the
+   * one failure class the customer must act on. §19 governs `failure_code`,
+   * not `metadata`, and six more top-level codes would force every consumer
+   * of that list to handle a detail about one code.
+   *
+   * Storing it is privacy-safe by construction rather than by care:
+   * `REDIRECT_REFUSALS` is a fixed list of seven strings with no customer
+   * data in it. The constraint bounds the key; the enum here bounds the
+   * value, which the migration deliberately does not try to do.
+   *
+   * The seven values are written out again below rather than imported from
+   * `lib/security/verification-target`, which is `server-only`: this module is
+   * a row shape, and a Phase 8 screen may need it. A unit test keeps the two
+   * lists equal, which is what this repository already does for the failure
+   * codes and the migration.
+   */
+  redirect_reason: z.enum(REDIRECT_REASONS).optional(),
+});
+
+export type VerificationMetadata = z.infer<typeof verificationMetadataSchema>;
+
+/** The keys the constraint allows, for the test that compares the two. */
+export const VERIFICATION_METADATA_KEYS = Object.freeze(
+  Object.keys(verificationMetadataSchema.shape).sort(),
+);
 
 /** A SHA-256 digest as §20's chain would store it, if it stored one. */
 const digest = z.string().regex(/^[0-9a-f]{64}$/);
@@ -77,7 +161,7 @@ export const verificationCheckRowSchema = z
     // What was observed on the page, not what was expected: disclosure_id
     // names the expected version.
     disclosure_version: z.int().min(1).nullable(),
-    metadata: z.record(z.string(), z.unknown()),
+    metadata: verificationMetadataSchema,
     payload_hash: digest.nullable(),
     previous_record_hash: digest.nullable(),
   })

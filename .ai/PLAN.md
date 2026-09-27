@@ -376,12 +376,67 @@ not covered by it. Building the chain first was the alternative; it was not
 taken, because it would put the ordering question — what "previous record"
 means across deployments — ahead of having any evidence to reason about.
 
-**Owed by TASK-023** (PR #39 review, note 4). `metadata`'s promise — facts
-about the check, never content from the customer's page — is bounded today
-only in shape and size, which leaves room for page content. A key whitelist
-is enforceable in a check constraint, and it lands with the task that first
-writes metadata and therefore knows the vocabulary. Inventing the key names
-two tasks early would have been a guess that TASK-023 widened anyway.
+**Paid in TASK-023** (PR #39 review, note 4). `metadata`'s promise — facts
+about the check, never content from the customer's page — was bounded only in
+shape and size, which left room for page content. It now has a check
+constraint naming the seven keys the fetch produces, mirrored by a strict
+row schema, with a unit test keeping the two equal in both directions.
+TASK-024 adds its inspection keys in its own migration: widening a whitelist
+by a named migration is an act somebody reviews, which is the opposite of
+drift. The honest limit is recorded in the migration, in the column comment
+and in README §6 — a whitelist bounds keys, not values, so it is the reviewer
+of the next migration who is the last line, not the constraint.
+
+**Decisions taken in TASK-023** (owner, 2026-09-27). The verifier tries
+`https://` and falls back to plain `http://` once if the connection or the
+TLS handshake failed, recording which scheme answered — a customer served
+over plain HTTP has the same obligation, and refusing to look would record a
+failure that is really about their certificate. The bounds are 5s to connect,
+15s in total, 1 MiB of body and 5 redirects, each with its own code, and they
+are module constants rather than options. A redirect may go to any public
+host but never from HTTPS to HTTP, and a hop may carry a path where the
+original target may not. README §17 states all of it, because each one is a
+fact a customer may be told.
+
+**Found in TASK-023, and it widens §19 by one code.** There was no stored
+code for a name that resolved and a connection that was then refused, reset,
+unreachable or rejected at TLS — a site that is simply down, the most common
+real failure there is. It would have landed on `UNKNOWN_ERROR`, which tells a
+customer nothing and is what §19 exists to prevent. `CONNECTION_FAILED` is
+added in the same migration as the metadata whitelist, before anything has
+written a row. Proposed by the implementer, awaiting sign-off.
+
+**Settled on the PR #40 review** (owner, 2026-09-27). `metadata` gained an
+eighth key, `redirect_reason`: `REDIRECT_BLOCKED` is one stored code over six
+causes that each need a different fix, and §19 governs `failure_code` rather
+than `metadata`. It landed in TASK-023 rather than TASK-024's migration by the
+same rule that settled PR #39 note 4 — a key belongs with the task that
+produces the fact, and TASK-024 never sees a redirect. A failure now also
+carries `http_status` and `content_type` whenever the server answered, so a
+4 MB page is a `RESPONSE_TOO_LARGE` that still says it was a 200 of
+`text/html`. And the fetch's three test seams moved out of its public surface
+into `fetch-page.internal.ts`, reachable only from `tests/` and its own
+wrapper by an ESLint rule: one of the three replaced the guarded lookup, in a
+module whose stated reason for constant bounds is that no caller may widen
+them.
+
+**Owed by TASK-025, decided on the PR #40 review** (owner, 2026-09-27). The
+fetch rejects rather than inventing evidence when the fault is ours — a
+hostname that will not parse, or an invalid environment. Both were already
+validated upstream, so turning either into a `failure / UNKNOWN_ERROR` row
+would write false evidence about a customer who did nothing wrong. **The
+scheduler must catch per deployment, log which hostname it was, and write no
+row for that deployment.** A rejection that reaches it unguarded stops a whole
+run.
+
+**A limit of the TASK-023 tests, stated rather than hidden.** The SSRF proofs
+use the real guarded lookup with a fake resolver, because no test machine can
+own 169.254.169.254; the transport proofs override the lookup to reach a real
+loopback server, which is the address the guarded lookup exists to refuse.
+The two cannot be composed in one process for the general case, so one thing
+is proven only at the validator: the HTTPS-to-HTTP downgrade refusal, which
+would need a TLS server with a certificate the suite would have to mint.
+Every other hop rule is proven through the chain against a real server.
 
 **Found in TASK-022, and it changes an existing guarantee for the better.**
 `verification_checks` holds foreign keys into `deployments` and
@@ -611,10 +666,13 @@ records the answer, so a reader of an old handoff still finds it.
 4. **Supported disclosure languages at launch** — constrains the Phase 5 enum.
    Adding a language later is cheap; removing one customers already publish is
    not.
-5. **DNS rebinding strategy** — pinning the resolved address versus
-   re-validating immediately before connect. Blocks TASK-023. The choice
-   depends on the hosting platform's outbound networking, which should be
-   confirmed rather than assumed.
+5. ~~**DNS rebinding strategy**~~ — **answered in TASK-023.** Neither
+   alternative as posed: the address is validated _inside_ the resolution the
+   socket uses, so there is no gap to close between checking and connecting.
+   It turned out not to depend on the hosting platform's outbound networking
+   at all, because it is Node's own `lookup` seam rather than anything the
+   platform provides — which is also why it survives a move off the current
+   host.
 6. **Whether the public transparency page (§68) is in the launch scope** —
    currently unscheduled in this plan. It is a distinct public surface with its
    own exposure rules and deserves its own phase if it ships.

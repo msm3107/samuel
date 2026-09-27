@@ -5,9 +5,13 @@ vi.mock("server-only", () => ({}));
 import {
   isPublicAddress,
   normalizeHostname,
+  REDIRECT_REFUSALS,
+  validateRedirectTarget,
   validateVerificationTarget,
   VERIFICATION_TARGET_FAILURES,
 } from "@/lib/security/verification-target";
+
+import { verificationMetadataSchema } from "@/features/verification/verification-check";
 
 describe("normalizeHostname", () => {
   it.each([
@@ -317,5 +321,132 @@ describe("isPublicAddress", () => {
     ["an empty string", ""],
   ])("refuses anything it can't read as an address: %s", (_label, input) => {
     expect(isPublicAddress(input)).toBe(false);
+  });
+});
+
+describe("validateRedirectTarget", () => {
+  const https = new URL("https://shop.example.com/");
+  const http = new URL("http://shop.example.com/");
+
+  it.each([
+    ["a relative path", "/en/", "https://shop.example.com/en/"],
+    ["a relative name", "welcome", "https://shop.example.com/welcome"],
+    [
+      "the same host",
+      "https://shop.example.com/en",
+      "https://shop.example.com/en",
+    ],
+    ["another host", "https://www.example.com/", "https://www.example.com/"],
+    [
+      "an unrelated host",
+      "https://cdn.vendor.net/a/b?c=d",
+      "https://cdn.vendor.net/a/b?c=d",
+    ],
+    [
+      "an upgrade to https",
+      "https://shop.example.com/",
+      "https://shop.example.com/",
+    ],
+  ])("follows %s", (_label, location, expected) => {
+    const decision = validateRedirectTarget(location, https);
+
+    expect(decision.ok).toBe(true);
+    expect(decision.ok && decision.url.toString()).toBe(expected);
+  });
+
+  it("follows a hop that keeps plain http, when that is where it started", () => {
+    // A check that began on http has nothing to downgrade from.
+    const decision = validateRedirectTarget("http://www.example.com/", http);
+
+    expect(decision.ok).toBe(true);
+  });
+
+  it.each([
+    ["a downgrade to http", "http://shop.example.com/", "SCHEME_DOWNGRADE"],
+    ["a downgrade to another host", "http://evil.example/", "SCHEME_DOWNGRADE"],
+    ["a non-http scheme", "ftp://files.example.com/", "UNSUPPORTED_SCHEME"],
+    ["a javascript url", "javascript:alert(1)", "UNSUPPORTED_SCHEME"],
+    [
+      "embedded credentials",
+      "https://user:pw@example.com/",
+      "EMBEDDED_CREDENTIALS",
+    ],
+    ["loopback", "https://127.0.0.1/", "PRIVATE_NETWORK_BLOCKED"],
+    ["a decimal loopback", "https://2130706433/", "PRIVATE_NETWORK_BLOCKED"],
+    [
+      "the metadata address",
+      "https://169.254.169.254/latest/meta-data/",
+      "PRIVATE_NETWORK_BLOCKED",
+    ],
+    ["a private address", "https://10.0.0.5/", "PRIVATE_NETWORK_BLOCKED"],
+    ["an IPv6 loopback", "https://[::1]/", "PRIVATE_NETWORK_BLOCKED"],
+    [
+      "an IPv4-mapped loopback",
+      "https://[::ffff:127.0.0.1]/",
+      "PRIVATE_NETWORK_BLOCKED",
+    ],
+    ["localhost", "https://localhost/", "PRIVATE_NETWORK_BLOCKED"],
+    ["an internal name", "https://vault.internal/", "PRIVATE_NETWORK_BLOCKED"],
+    ["a public IP literal", "https://93.184.216.34/", "IP_ADDRESS_NOT_ALLOWED"],
+    [
+      "a non-default port",
+      "https://shop.example.com:8443/",
+      "PORT_NOT_ALLOWED",
+    ],
+    ["an empty location", "", "INVALID_LOCATION"],
+    // A single label is refused as malformed, which is how an internal
+    // name that is not on the reserved list is still stopped here. A
+    // multi-label one (db.intranet) passes and meets the guarded lookup,
+    // exactly as TASK-012 said it would.
+    ["a single label", "https://intranet/", "INVALID_LOCATION"],
+  ])("refuses %s as %s", (_label, location, reason) => {
+    const decision = validateRedirectTarget(location, https);
+
+    expect(decision.ok).toBe(false);
+    expect(!decision.ok && decision.reason).toBe(reason);
+    // Only a hop into space the verifier may not reach is stored as
+    // PRIVATE_NETWORK_BLOCKED; everything else about a hop is that the
+    // redirect was not followed.
+    expect(!decision.ok && decision.code).toBe(
+      reason === "PRIVATE_NETWORK_BLOCKED"
+        ? "PRIVATE_NETWORK_BLOCKED"
+        : "REDIRECT_BLOCKED",
+    );
+    expect(REDIRECT_REFUSALS).toContain(reason);
+  });
+
+  it("refuses a location longer than any real one", () => {
+    const decision = validateRedirectTarget(
+      `https://example.com/${"a".repeat(2000)}`,
+      https,
+    );
+
+    expect(decision.ok).toBe(false);
+    expect(!decision.ok && decision.reason).toBe("INVALID_LOCATION");
+  });
+
+  it("keeps the registration vocabulary out of the redirect one", () => {
+    // A person registering a hostname has a message for every code in
+    // VERIFICATION_TARGET_FAILURES (features/deployments/deployment.ts), and
+    // can never meet a downgrade or a bad Location. Two audiences, two lists.
+    expect(VERIFICATION_TARGET_FAILURES as readonly string[]).not.toContain(
+      "SCHEME_DOWNGRADE",
+    );
+    expect(REDIRECT_REFUSALS as readonly string[]).not.toContain(
+      "PATH_NOT_ALLOWED",
+    );
+  });
+});
+
+describe("the redirect reasons a row may store", () => {
+  it("are the same seven the validator produces", () => {
+    // `features/verification/verification-check.ts` writes the list out again
+    // rather than importing it, because that module is a row shape a Phase 8
+    // screen may need and this one is `server-only`. So the copy is kept
+    // honest here, as the failure codes are kept honest against the migration.
+    const shape = verificationMetadataSchema.shape.redirect_reason;
+    const stored = shape.unwrap().options;
+
+    expect([...stored].sort()).toEqual([...REDIRECT_REFUSALS].sort());
   });
 });

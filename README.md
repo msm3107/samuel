@@ -379,6 +379,13 @@ created nullable and unpopulated.
 `status` is `success` or `failure`; `failure_code` carries the reason and is
 null exactly when the status is success.
 
+`metadata` holds facts about the check and never content fetched from the
+customer's page. From TASK-023 that is a database rule rather than a habit: a
+check constraint names the keys it may hold, so a new one needs a migration
+somebody reviews. A whitelist bounds keys, not values — it is the reviewer of
+that migration, not the constraint, who is the last line against page content
+reaching the column.
+
 Never mutate an existing verification check to change historical evidence.
 
 ### audit_events
@@ -911,6 +918,65 @@ Revalidate redirect targets.
 
 Never allow verification requests to access internal infrastructure.
 
+### What the verifier actually does
+
+Settled in TASK-023 (owner, 2026-09-27). Each of these is a fact a customer
+may be told, so it is written here rather than only in the code.
+
+**The scheme.** A deployment is stored as a bare hostname, so the verifier
+chooses. It tries `https://` first, and if the connection or the TLS handshake
+fails it tries `http://` once. A customer served over plain HTTP has the same
+disclosure obligation as everyone else, and refusing to look would record a
+failure that is really about their certificate. Evidence fetched over plain
+HTTP is weaker — an attacker on the path could have written the page that was
+seen — so the scheme that answered, and whether HTTPS failed first, are part
+of the stored row rather than an implementation detail.
+
+**The bounds.** Five seconds to connect, fifteen seconds in total for the
+whole attempt including any redirects and any HTTPS attempt, one mebibyte of
+body, five redirects. Each has its own failure code (§19). They are module
+constants, not options: a caller that could widen them could widen them for a
+hostile target.
+
+**The size cap refuses; it never truncates.** A body over the cap is
+`RESPONSE_TOO_LARGE` and is not inspected. Inspecting a cut-off page would
+report `WIDGET_NOT_FOUND` for a page that may well contain the widget, which
+is false evidence in the one table whose value is that it can be relied on.
+
+**DNS is resolved once per connection, and the address validated is the
+address connected to.** The verifier hands the socket a single address that
+passed the public-address rules; there is no second resolution between the
+check and the connection, which is what DNS rebinding needs.
+
+**A redirect may go to any public host, but never from HTTPS to HTTP.** Every
+hop is revalidated as if it were the original target. Cross-host hops are
+ordinary — apex to www, a CDN, a country site — and a hop may carry a path,
+which the original target may not. A downgrade is refused: an honest site
+never needs one, and it is exactly the step that turns a checked page into one
+an attacker on the path can write.
+
+**The verifier names itself.** Requests carry a `User-Agent` of
+`Article50Verifier/1.0` and the application's URL, so a customer reading their
+access log can tell what the traffic is and allow it deliberately.
+
+**A refused redirect says which rule refused it.** `REDIRECT_BLOCKED` is one
+stored code over six causes that each need a different fix, so the rule is
+recorded in `metadata.redirect_reason` (§6). §19 governs `failure_code`; the
+detail belongs beside it rather than multiplying the code list.
+
+**The fetch has no options.** A caller passes a hostname. The bounds, the
+scheme order, the redirect rules and the address rules are not parameters, and
+the test seams that exist for exercising the transport live in a module an
+ESLint rule keeps out of application code. A fetch whose guard can be replaced
+by its caller is not a guard.
+
+**A fault of ours is never recorded as a customer's failure.** If the verifier
+cannot even build the request — a hostname that will not parse, an invalid
+environment — it raises rather than writing a `failure` row. Both were
+validated long before the check ran, so a row would say a customer had not
+complied when the truth is that our code is wrong. The scheduler catches per
+deployment and records nothing for that one.
+
 ---
 
 ## 18. Verification
@@ -941,6 +1007,7 @@ Use deterministic machine-readable codes.
 
 ```
 DNS_ERROR
+CONNECTION_FAILED
 CONNECTION_TIMEOUT
 TOTAL_TIMEOUT
 HTTP_ERROR
@@ -966,6 +1033,15 @@ code therefore always means a failure, and the database enforces that
 each exceeded bound to map to its own code: a connection that never opened
 is a different fact from one that opened and never finished, and a redirect
 chain that was too long is a different fact from one that was blocked.
+
+`CONNECTION_FAILED` is added in TASK-023, and it is the only stored code that
+is not about a bound. The name resolved and the connection was then refused,
+reset, unreachable, or rejected at TLS — a site that is simply down, which is
+the most common real failure there is. Without it that lands on
+`UNKNOWN_ERROR`, which tells a customer nothing and is what this section
+exists to prevent. A failure at TLS specifically is usually invisible,
+because the verifier retries once over plain HTTP (§17) and the row records
+that HTTPS was tried and failed.
 
 Do not rely on human-readable strings for application logic.
 
