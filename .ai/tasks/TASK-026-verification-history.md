@@ -92,7 +92,8 @@ check_window desc` exactly. Cost, accepted: TASK-022 created
 
 ## Proposed by the implementer
 
-Awaiting sign-off.
+All nine accepted by Mikołaj Smoliniec (project owner), 2026-09-27, proposal 7
+as amended below.
 
 1. **The read goes through the session client, and this module never imports the
    service-role one.** Row-level security is what makes another organization's
@@ -125,11 +126,53 @@ Awaiting sign-off.
    screen has to be able to say which it is looking at, and a second query for
    one column would be a second round trip for a fact the first one already had
    in hand.
-7. **Nothing new is serialized.** `serializeVerificationCheck` (TASK-022) is
-   what leaves this feature: no organization id, no disclosure id, no
-   `metadata`. `metadata` is deliberately not exposed even to a member — it is
-   ours for support, the screen shows the failure code and the reason, and §31's
-   rule is that a route returns a serializer's output and never a row.
+7. **Nothing new is serialized _here_.** `serializeVerificationCheck`
+   (TASK-022) is what leaves this feature: no organization id, no disclosure id,
+   no `metadata` object, and §31's rule is that a route returns a serializer's
+   output and never a row.
+
+   **Amended by the owner, 2026-09-27 (PR #43 review, note 1).** As originally
+   written this proposal contained two sentences that cannot both be true: it
+   promised "the screen shows the failure code and the reason" while the
+   invariant below withholds `metadata`, where the reason lives, and
+   `SerializedVerificationCheck` has no field for it. What a customer would
+   actually see is `WIDGET_NOT_FOUND`, with no way to tell a missing tag from a
+   copy served off their own host from a tag a browser will not execute — and
+   both reason vocabularies were argued for, across two reviews, precisely on
+   the grounds that they are the one fact telling a customer what to change
+   (`WIDGET_REASONS`, TASK-024 and PR #41's blocking finding;
+   `metadata.redirect_reason`, PR #40 note 2).
+
+   The promise stands and the shape changes: **`widget_reason` and
+   `redirect_reason` are serialized as named fields, bounded by the same
+   `z.enum`s the row schema already declares, in TASK-027** — the task that
+   writes the screen that renders them. Nothing else about `metadata` leaves.
+   Why these two and not the object: both are fixed lists of strings with no
+   customer data in them by construction, which is documented at their
+   declarations and is why `widget_tags` is a count rather than the identifier
+   found on the page. The invariant's substance is `final_host`,
+   `content_type`, `charset`, the counts and the timings; those stay ours.
+
+   Why named fields rather than the object: the whitelist exists so that a new
+   `metadata` key is a reviewed migration. Passing the object through would make
+   adding a key an unreviewed change to a public API, which moves the drift
+   instead of removing it. Named enum fields also keep the API typed, so a
+   renamed key fails typecheck rather than rendering nothing. Cost, accepted:
+   two fields to keep in step with the vocabularies, a future reason added by
+   migration touches the serializer, and the enum values become public — a
+   client must treat an unrecognized reason as no detail rather than as an
+   error. Rejected: serializing the widget reason only (it would leave
+   `REDIRECT_BLOCKED` collapsing six causes with six different fixes into one
+   code, which is what PR #40 note 2 settled) and retiring the promise (then the
+   reason tells support what to change and the customer is left guessing, which
+   is the situation the codes were introduced to end).
+
+   Why in TASK-027 rather than here: this pull request is reviewed and green,
+   and the field arrives with its only consumer, so it cannot ship unread. Until
+   then `tests/security/verification/verification-history-surface.test.ts` pins
+   the current answer in a test of its own, named for the fact that TASK-027
+   changes it.
+
 8. **The route derives the organization from its path, and the deployment from
    its path.** No identifier is read from a body or a query parameter except the
    cursor, which names no resource.

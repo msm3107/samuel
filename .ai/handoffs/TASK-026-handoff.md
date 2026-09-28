@@ -36,7 +36,8 @@ Owner, 2026-09-27.
 4. **The paging rule is documented in README §31, here.** This is the second
    paged endpoint, so the pattern is a pattern rather than one instance.
 
-Implementer: nine proposals, awaiting sign-off. The session client and no
+Implementer: nine proposals, **all nine accepted by Mikołaj Smoliniec (project
+owner), 2026-09-27**, proposal 7 as amended in the contract. The session client and no
 service-role import on the read path; the query reading from `deployments` and
 embedding the checks so "no such deployment" and "no checks yet" are different
 answers; an ISO timestamp cursor rather than a date, because a date would break
@@ -91,6 +92,8 @@ what was rejected.
 
 ### Verification
 
+On `8e4e612`, the commit the review read:
+
 ```
 pnpm typecheck                      pass (app and widget projects)
 pnpm lint                           pass
@@ -103,8 +106,77 @@ next build                          pass — compiled successfully
 ```
 
 Database reset to the migration head before the database suites and again before
-the browser suite. `CODEX-SECURITY.md`'s sha256 checked before and after
-Prettier: unchanged, and Prettier was run on changed files by name.
+the browser suite.
+
+Re-run on the amendment commit, which changes one route, two test files and four
+documents:
+
+```
+pnpm typecheck                      pass (app and widget projects)
+pnpm lint                           pass
+pnpm format:check                   pass
+pnpm test                           pass — 76 files, 2035 tests
+real-database vitest                pass — 36 files, 435 tests
+next build                          pass — compiled successfully
+```
+
+One more test in each: the surface test split in two, and the repeated-cursor
+test. **pgTAP and the browser suite were not re-run** — this commit changes no
+SQL, no migration and no user interface, and they passed on `8e4e612`. CI runs
+both regardless.
+
+**The new test was checked against its own absence.** With `readCursor` restored
+to `searchParams.get`, "refuses a repeated cursor, both values well formed"
+fails with `expected 200 to be 400`; with the fix it passes. Worth doing here
+because the other lesson of this task is a test that passed for the wrong
+reason.
+
+`CODEX-SECURITY.md`'s sha256 checked before and after Prettier: unchanged
+(`78d81a3…`), and Prettier was run on changed files by name.
+
+### The PR #43 review, and what it hands TASK-027
+
+Verdict: APPROVE WITH NON-BLOCKING NOTES at `8e4e612`. Both notes were accepted;
+one changed this pull request and one changed TASK-027's shape.
+
+**Note 1 — proposal 7 promised a screen this serializer cannot produce, and the
+owner amended it rather than retiring it.** The proposal said "the screen shows
+the failure code and the reason" while the invariant withholds `metadata`, where
+the reason lives. So `widget_reason` and `redirect_reason` **are serialized as
+named, `z.enum`-bounded fields in TASK-027**, and nothing else about `metadata`
+leaves. The contract states the reasoning, the rejected alternatives and the
+accepted costs.
+
+**TASK-027 therefore owns three edits before it writes a component:**
+
+1. `SerializedVerificationCheck` and `serializeVerificationCheck` gain
+   `widgetReason` and `redirectReason`, typed from `WIDGET_REASONS` and the
+   redirect vocabulary the row schema already declares. No migration: both keys
+   exist in `metadata` and both are already bounded there.
+2. `tests/security/verification/verification-history-surface.test.ts` — the test
+   named "still withholds the widget reason, which TASK-027 changes" becomes a
+   positive assertion, and the expected key list grows by two. The test above it,
+   which asserts the `metadata` _object_ does not leave and that `final_host`
+   never appears, must **not** be widened.
+3. The screen renders the reason as text beside the failure code, and treats an
+   unrecognized reason as no detail rather than as an error — the enum values are
+   public from then on, and a value added by a later migration must not break a
+   client.
+
+**Note 2 — a repeated `before` was resolved here where three other routes refuse
+it, and is now refused.** `readCursor` reads `getAll("before")` and answers 400
+`invalid_cursor` to more than one value, which is what `parseSingle` on the
+deployments list and `parseCursor` on the disclosures list already do. §31 now
+says so explicitly, so the rule this task documents and the route documenting it
+agree. The integration suite asserts it with two _well-formed_ values, so it
+cannot pass for the malformed-cursor reason.
+
+One difference kept deliberately: those two routes answer `invalid_request`
+where this one answers `invalid_cursor`. The specific code is the better one —
+§10 asks for deterministic machine-readable failure codes, and a client that
+gets `invalid_request` cannot tell which parameter it got wrong. Making the two
+older routes specific is worth a task of its own; making this one vaguer to
+match them is not.
 
 ### Two things worth reading before TASK-027
 

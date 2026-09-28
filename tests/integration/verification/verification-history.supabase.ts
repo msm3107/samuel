@@ -405,4 +405,21 @@ describe("paging", () => {
       expect((await readError(response)).code).toBe("invalid_cursor");
     }
   });
+
+  it("refuses a repeated cursor, both values well formed", async () => {
+    // Two cursors are two different pages. Taking the first would answer a
+    // question the caller did not ask, so this is a 400 — the same answer the
+    // disclosures and deployments lists give a repeated parameter, and the
+    // ambiguity half of README §31's rule (PR #43 review, note 2).
+    const { deploymentId } = await createDeployment(organization.id);
+
+    const response = await read(
+      organization.id,
+      deploymentId,
+      "?before=2026-09-27T00%3A00%3A00.000Z&before=2020-01-01T00%3A00%3A00.000Z",
+    );
+
+    expect(response.status).toBe(400);
+    expect((await readError(response)).code).toBe("invalid_cursor");
+  });
 });

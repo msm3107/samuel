@@ -43,15 +43,31 @@ const row = {
 };
 
 describe("what leaves the server", () => {
-  it("does not include metadata, on a failure that has plenty of it", () => {
-    // `metadata` is ours, for support. The screen shows the failure code; the
-    // reason a check failed is not withheld, but the facts we collected about
-    // the attempt are not a customer-facing surface (README §31, §34).
+  it("does not include the metadata object, on a failure that has plenty of it", () => {
+    // Which decision this asserts: the *object* does not leave the server. It
+    // does not assert that the reason a check failed is withheld from the
+    // customer — that is the next test, and it is temporary.
+    //
+    // Owner's decision, 2026-09-27 (PR #43 review, note 1): `widget_reason`
+    // and `redirect_reason` become named, enum-bounded fields in TASK-027,
+    // because both vocabularies are fixed strings with no customer data in
+    // them and both were introduced to tell a customer what to change. The
+    // rest of this object — `final_host`, `content_type`, `charset`, the counts
+    // and the timings — stays ours, for support (README §31, §34).
     const serialized = serializeVerificationCheck(row);
 
     expect(Object.keys(serialized)).not.toContain("metadata");
     expect(JSON.stringify(serialized)).not.toContain("shop.example.com");
-    expect(JSON.stringify(serialized)).not.toContain("FOREIGN_ORIGIN");
+  });
+
+  it("still withholds the widget reason, which TASK-027 changes", () => {
+    // Pinned on its own so serializing the reason is one line in one test,
+    // rather than an edit to the invariant above that could widen it by
+    // accident. Until TASK-027 a customer sees `WIDGET_NOT_FOUND` and not
+    // which of the eight reasons produced it.
+    expect(JSON.stringify(serializeVerificationCheck(row))).not.toContain(
+      "FOREIGN_ORIGIN",
+    );
   });
 
   it("does not include the organization or the disclosure it was checked against", () => {

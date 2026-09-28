@@ -75,13 +75,21 @@ function notFound() {
  * absent: answering with the newest checks would silently ignore what the
  * caller asked for, and answering with an empty page would hide their bug. A
  * *valid* timestamp older than every row is an empty page, which is true.
+ *
+ * A repeated `before` is refused too, as on the disclosures and the
+ * deployments lists (PR #43 review, note 2). Two cursors name two different
+ * pages and there is nothing to prefer between them, so guessing the first
+ * would answer a question the caller did not ask.
  */
 function readCursor(request: Request): { before?: Date } {
-  const before = new URL(request.url).searchParams.get("before");
-  if (before === null) {
+  const values = new URL(request.url).searchParams.getAll("before");
+  if (values.length === 0) {
     return {};
   }
-  const parsed = verificationCursorSchema.safeParse(before);
+  if (values.length > 1) {
+    throw new ApiRequestError(400, "invalid_cursor");
+  }
+  const parsed = verificationCursorSchema.safeParse(values[0]);
   if (!parsed.success) {
     throw new ApiRequestError(400, "invalid_cursor");
   }

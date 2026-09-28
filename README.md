@@ -1558,6 +1558,10 @@ GET …/deployments/{id}/verification-checks?before={checkWindow}
   row.
 - A cursor that is not well formed is `400`. A well-formed cursor below every
   row is an empty page, which is the true answer rather than an error.
+- `before` given twice is not well formed either: two cursors name two
+  different pages, and preferring one of them would answer a question the
+  caller did not ask. Every list here refuses a repeated query parameter for
+  the same reason.
 - There is no way to page toward newer rows. Start again without `before`.
 
 A response never carries a total count. Counting the rows a tenant has is a

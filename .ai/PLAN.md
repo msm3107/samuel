@@ -573,6 +573,21 @@ well-formed one below every row is an empty page. It had been deferred through
 three handoffs waiting for the task that documents the customer-facing API;
 this is the second paged endpoint, so the pattern became a pattern.
 
+**Decided for TASK-027** (owner, 2026-09-27; PR #43 review, note 1). **The
+screen shows the reason, so `widget_reason` and `redirect_reason` become named,
+enum-bounded fields on the serializer — in TASK-027, with the screen that
+renders them.** TASK-026's proposal 7 had promised a screen that shows "the
+failure code and the reason" while withholding the `metadata` object the reason
+lives in; the two vocabularies were each justified, across two reviews, as the
+one fact that tells a customer what to change, and both are fixed lists of
+strings with no customer data in them. Nothing else about `metadata` leaves the
+server: `final_host`, `content_type`, `charset`, the counts and the timings stay
+ours, and a new key there remains a reviewed migration rather than an unreviewed
+change to a public API. Consequence for this phase's invariants: the reason
+values are public from TASK-027 on, so a client treats an unrecognized reason as
+no detail rather than as an error, and a reason added by a later migration
+touches the serializer as well as the constraint.
+
 ---
 
 ## Phase 9 — Evidence reports
