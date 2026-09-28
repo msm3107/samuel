@@ -203,6 +203,11 @@ describe("a verification check row", () => {
       httpStatus: 200,
       widgetDetected: true,
       disclosureVersion: 3,
+      // TASK-027: the two values from `metadata` that do leave. This row
+      // carries `redirects` and neither reason, so both are null — and
+      // `redirects` itself, like every other key, does not appear.
+      widgetReason: null,
+      redirectReason: null,
     });
     const keys = Object.keys(serialized);
     expect(keys).not.toContain("organizationId");

@@ -134,7 +134,13 @@ export const WIDGET_REASONS = [
 
 export type WidgetReason = (typeof WIDGET_REASONS)[number];
 
-const REDIRECT_REASONS = [
+/**
+ * Which of the seven redirect rules refused a hop. Exported from TASK-027,
+ * because it is serialized: the screen shows which rule, and a `z.enum` on the
+ * serialized field is what keeps the API's vocabulary and the row's the same
+ * list rather than two that drift.
+ */
+export const REDIRECT_REASONS = [
   "INVALID_LOCATION",
   "UNSUPPORTED_SCHEME",
   "SCHEME_DOWNGRADE",
@@ -143,6 +149,8 @@ const REDIRECT_REASONS = [
   "IP_ADDRESS_NOT_ALLOWED",
   "PORT_NOT_ALLOWED",
 ] as const;
+
+export type RedirectReason = (typeof REDIRECT_REASONS)[number];
 
 export const verificationMetadataSchema = z.strictObject({
   /** Which scheme answered. Plain HTTP is weaker evidence, so it is stored. */
@@ -291,12 +299,29 @@ export type SerializedVerificationCheck = Readonly<{
   httpStatus: number | null;
   widgetDetected: boolean | null;
   disclosureVersion: number | null;
+  /** Which of {@link WIDGET_REASONS}, where the inspection recorded one. */
+  widgetReason: WidgetReason | null;
+  /** Which of {@link REDIRECT_REASONS}, where a hop was refused. */
+  redirectReason: RedirectReason | null;
 }>;
 
 /**
- * What leaves this feature. No organization id, no disclosure id, no
- * metadata: a screen shows what happened, and the identifiers it already
- * has are the ones it navigated by (README §31).
+ * What leaves this feature. No organization id, no disclosure id, and no
+ * `metadata` object: a screen shows what happened, and the identifiers it
+ * already has are the ones it navigated by (README §31).
+ *
+ * Two values from `metadata` are named fields here, and they are the only two
+ * (owner, 2026-09-27; PR #43 review, note 1). Both vocabularies are fixed lists
+ * of strings with no customer data in them — which is what separates them from
+ * `final_host`, `content_type` and the rest — and both exist to tell a customer
+ * what to change: `WIDGET_NOT_FOUND` alone cannot distinguish a missing tag
+ * from a copy served off the customer's own host from a tag no browser will
+ * run, and `REDIRECT_BLOCKED` alone collapses six causes with six different
+ * fixes (TASK-024; PR #40 note 2; PR #41's blocking finding).
+ *
+ * Named fields rather than the object, deliberately: the metadata whitelist
+ * exists so that a new key is a reviewed migration, and passing the object
+ * through would make adding one an unreviewed change to a public API instead.
  */
 export function serializeVerificationCheck(
   row: unknown,
@@ -312,5 +337,10 @@ export function serializeVerificationCheck(
     httpStatus: parsed.http_status,
     widgetDetected: parsed.widget_detected,
     disclosureVersion: parsed.disclosure_version,
+    // Absent is null, not undefined: a check that failed at DNS observed
+    // neither, and a field that disappears from a response is a field a client
+    // has to test for twice.
+    widgetReason: parsed.metadata.widget_reason ?? null,
+    redirectReason: parsed.metadata.redirect_reason ?? null,
   });
 }

@@ -60,14 +60,31 @@ describe("what leaves the server", () => {
     expect(JSON.stringify(serialized)).not.toContain("shop.example.com");
   });
 
-  it("still withholds the widget reason, which TASK-027 changes", () => {
-    // Pinned on its own so serializing the reason is one line in one test,
-    // rather than an edit to the invariant above that could widen it by
-    // accident. Until TASK-027 a customer sees `WIDGET_NOT_FOUND` and not
-    // which of the eight reasons produced it.
-    expect(JSON.stringify(serializeVerificationCheck(row))).not.toContain(
-      "FOREIGN_ORIGIN",
-    );
+  it("does include the widget reason, which is why the vocabulary exists", () => {
+    // TASK-027, the other half of the test above. `WIDGET_NOT_FOUND` alone
+    // cannot tell a customer whether they have no tag, a copy served off their
+    // own host, or a tag no browser will run — and those are three different
+    // fixes. The value is one of eight fixed strings, never anything read off
+    // the page.
+    const serialized = serializeVerificationCheck(row);
+
+    expect(serialized.widgetReason).toBe("FOREIGN_ORIGIN");
+    expect(serialized.redirectReason).toBeNull();
+  });
+
+  it("carries no reason where the check observed none", () => {
+    // A check that failed at DNS scanned nothing. Null rather than a missing
+    // field: a key that disappears is a key a client has to test for twice.
+    const serialized = serializeVerificationCheck({
+      ...row,
+      failure_code: "DNS_ERROR",
+      http_status: null,
+      widget_detected: null,
+      metadata: {},
+    });
+
+    expect(serialized.widgetReason).toBeNull();
+    expect(serialized.redirectReason).toBeNull();
   });
 
   it("does not include the organization or the disclosure it was checked against", () => {
@@ -88,10 +105,12 @@ describe("what leaves the server", () => {
       "failureCode",
       "httpStatus",
       "id",
+      "redirectReason",
       "status",
       // README §18's second question, which is the one an inspection can
       // answer: was Article50.js present.
       "widgetDetected",
+      "widgetReason",
     ]);
     // The cursor a truncated page is continued with is in the rows themselves,
     // which is what lets the response carry no cursor of its own.

@@ -15,6 +15,8 @@ import {
   type InstallReadinessState,
 } from "@/features/deployments/install-readiness";
 import { readCurrentDisclosureState } from "@/features/disclosures/disclosure-queries";
+import { readLatestVerificationCheck } from "@/features/verification/verification-history-queries";
+import { VerificationStatusBadge } from "@/components/dashboard/verification-status";
 import { minimumRoleFor, roleSatisfies } from "@/lib/auth/organization-roles";
 import { serverEnv } from "@/lib/env/server-env";
 
@@ -22,6 +24,11 @@ import {
   organizationAccessOrNotFound,
   organizationOrNotFound,
 } from "../../access";
+import {
+  CHECK_SCHEDULE,
+  checksPath,
+  FAILURE_CODE_EXPLANATIONS,
+} from "./checks/messages";
 import { disclosurePath } from "../../systems/[systemId]/disclosure/messages";
 import { systemPath, systemsPath } from "../../systems/messages";
 import { setDeploymentStatusAction } from "../actions";
@@ -82,9 +89,12 @@ export default async function DeploymentPage({
   // anything (TASK-021). The same organization's, through the same
   // row-level security; the system is gone only if it was deleted since,
   // which is then not found like the deployment.
-  const [aiSystem, currentDisclosure] = await Promise.all([
+  // The newest check, for the summary below; the history itself is its own
+  // page (TASK-027). One row rather than a page of two hundred dropped to one.
+  const [aiSystem, currentDisclosure, latestCheck] = await Promise.all([
     readAiSystem(access, deployment.aiSystemId),
     readCurrentDisclosureState(access, deployment.aiSystemId),
+    readLatestVerificationCheck(access, deployment.id),
   ]);
   if (aiSystem === null) {
     notFound();
@@ -175,6 +185,45 @@ export default async function DeploymentPage({
               }
         }
       />
+
+      {/* The newest check and the way to the rest (TASK-027). What a failure
+          means and what to change is on the history page, said once, rather
+          than repeated here in a second set of words that could drift. */}
+      <section className="mt-12" aria-labelledby="verification-heading">
+        <h2 id="verification-heading" className="text-xl font-semibold">
+          Verification
+        </h2>
+        {latestCheck === null ? (
+          <p className="mt-4 text-slate-700">
+            No checks recorded yet. {CHECK_SCHEDULE}
+          </p>
+        ) : (
+          <>
+            <p className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+              <VerificationStatusBadge status={latestCheck.status} />
+              <time
+                dateTime={latestCheck.checkedAt}
+                className="text-sm text-slate-700"
+              >
+                {REGISTERED_AT.format(new Date(latestCheck.checkedAt))} UTC
+              </time>
+            </p>
+            {latestCheck.failureCode === null ? null : (
+              <p className="mt-2 text-slate-700">
+                {FAILURE_CODE_EXPLANATIONS[latestCheck.failureCode].label}
+              </p>
+            )}
+          </>
+        )}
+        <p className="mt-4 text-sm">
+          <Link
+            href={checksPath(access.organizationId, deployment.id)}
+            className={TEXT_LINK}
+          >
+            All verification checks
+          </Link>
+        </p>
+      </section>
 
       {canManage ? (
         <section className="mt-12" aria-labelledby="status-heading">
