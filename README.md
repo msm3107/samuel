@@ -1106,6 +1106,32 @@ that version enabled. That is the same predicate the public endpoint applies,
 and it is written once, in SQL, so the set we check and the set we serve cannot
 drift apart.
 
+### What a customer sees (TASK-027)
+
+`/dashboard/{organizationId}/deployments/{deploymentId}/checks` shows one
+deployment's history, newest first, paged by §31's rule. The deployment's own
+page carries the newest check and a link through.
+
+**A row is labelled by its window, not by the moment the check ran.** A window
+is a day, so it is shown as a date; the list is ordered and paged by it, and
+labelling rows by `checked_at` would let a row written late appear out of order
+in a record a customer relies on. The moment a check ran is shown for the newest
+check, where somebody reconstructing an incident wants it.
+
+**A failure says what to change, not which code was stored.** The screen shows
+fixed text per §19 code and per reason — `metadata.widget_reason` and
+`metadata.redirect_reason`, the two values the serializer exposes (owner,
+2026-09-27). The codes themselves are for logs and support; a customer sees
+sentences. An unrecognized reason renders as no detail rather than as an error,
+so a value added by a later migration cannot blank the screen.
+
+**Status is a word, a shape and a colour, in that order of authority** (§35).
+Nothing on that screen is communicated by colour alone.
+
+**The screen states the schedule and promises nothing about a given
+deployment.** Nothing in the application knows whether the schedule above has
+been added, so a promised first check would be a claim it cannot keep.
+
 ---
 
 ## 19. Verification Failure Codes

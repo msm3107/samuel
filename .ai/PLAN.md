@@ -573,6 +573,19 @@ well-formed one below every row is an empty page. It had been deferred through
 three handoffs waiting for the task that documents the customer-facing API;
 this is the second paged endpoint, so the pattern became a pattern.
 
+**Decisions taken in TASK-027** (owner, 2026-09-28). **The history is its own
+page**, `/dashboard/{organizationId}/deployments/{deploymentId}/checks`, with
+the newest check summarised on the deployment page: paging then re-runs one
+query rather than also re-reading the AI system, the current disclosure and the
+install readiness. **Status is a word, a shape and a colour, in that order of
+authority** — §35's rule, with the word and the shape each sufficient alone.
+**The newest check explains itself in a panel and the rows below are compact**,
+because daily checks repeat a failure for as long as it takes to fix and the
+same paragraph two hundred times stops the list reading as a record. **An empty
+history states the schedule and promises nothing**: the schedule is enabled
+outside the application, so a promised first check would be a claim the
+application cannot keep.
+
 **Decided for TASK-027** (owner, 2026-09-27; PR #43 review, note 1). **The
 screen shows the reason, so `widget_reason` and `redirect_reason` become named,
 enum-bounded fields on the serializer — in TASK-027, with the screen that

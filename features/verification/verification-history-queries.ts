@@ -178,3 +178,38 @@ export async function listVerificationChecks(
     truncated: parsed.verification_checks.length > VERIFICATION_LIST_LIMIT,
   };
 }
+
+/**
+ * The newest check for one deployment, or null when the deployment has none —
+ * and null too when this organization has no such deployment (TASK-027).
+ *
+ * Those two are one answer here, deliberately, and it is the opposite choice
+ * from {@link listVerificationChecks}: this serves a summary on a page that has
+ * already found the deployment and already said so, so it has nothing to tell
+ * apart. Where the difference matters, the list is what answers.
+ *
+ * A read of its own rather than a page of 200 dropped down to one. It is the
+ * same order and the same index — `(deployment_id, check_window)` — so the
+ * newest row here is the first row there.
+ */
+export async function readLatestVerificationCheck(
+  access: OrganizationAccess,
+  deploymentId: string,
+): Promise<SerializedVerificationCheck | null> {
+  assertAccessAllows(access, "organization.read");
+  const { supabase } = await createResolvingSessionClient();
+
+  const { data, error } = await supabase
+    .from("verification_checks")
+    .select(CHECK_COLUMNS)
+    .eq("organization_id", access.organizationId)
+    .eq("deployment_id", deploymentId)
+    .order("check_window", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new VerificationHistoryQueryError(error.code, { cause: error });
+  }
+  return data === null ? null : serializeVerificationCheck(data);
+}
