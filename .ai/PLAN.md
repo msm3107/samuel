@@ -550,6 +550,44 @@ continuing to exist.
 **Exit criteria.** Cross-tenant history reads fail. Pagination is bounded; no
 query can be made to return an unbounded result set.
 
+**Decisions taken in TASK-026** (owner, 2026-09-27). **The history cursor is
+`check_window`, not `checked_at`.** `unique (deployment_id, check_window)`
+guarantees one row per deployment per window, so a `<` cursor cannot skip a
+row — the guarantee is in the schema rather than in how the data happens to
+look, and `checked_at` is not unique. It also needs no migration: that
+constraint's own index serves the query exactly. TASK-022's
+`(deployment_id, checked_at desc)` index is therefore unused by this phase and
+stays for Phase 9's organization-wide reads.
+
+**One deployment's history, and no organization-wide read.** It is what the
+screen needs; reading across deployments is Phase 9's, where `check_window` is
+not unique and the cursor question has to be answered again. A page is 200
+checks, the same number as every other list here.
+
+**Paid in TASK-026** (PR #34 review, note 3). The paging rule both paged
+endpoints follow is documented in README §31 — the page size, that `truncated`
+carries no cursor and the caller asks again with the last row's own key, that
+`before` is exclusive, that each cursor is unique within what is paged so a
+boundary cannot skip a row, and that a malformed cursor is a 400 while a
+well-formed one below every row is an empty page. It had been deferred through
+three handoffs waiting for the task that documents the customer-facing API;
+this is the second paged endpoint, so the pattern became a pattern.
+
+**Decided for TASK-027** (owner, 2026-09-27; PR #43 review, note 1). **The
+screen shows the reason, so `widget_reason` and `redirect_reason` become named,
+enum-bounded fields on the serializer — in TASK-027, with the screen that
+renders them.** TASK-026's proposal 7 had promised a screen that shows "the
+failure code and the reason" while withholding the `metadata` object the reason
+lives in; the two vocabularies were each justified, across two reviews, as the
+one fact that tells a customer what to change, and both are fixed lists of
+strings with no customer data in them. Nothing else about `metadata` leaves the
+server: `final_host`, `content_type`, `charset`, the counts and the timings stay
+ours, and a new key there remains a reviewed migration rather than an unreviewed
+change to a public API. Consequence for this phase's invariants: the reason
+values are public from TASK-027 on, so a client treats an unrecognized reason as
+no detail rather than as an error, and a reason added by a later migration
+touches the serializer as well as the constraint.
+
 ---
 
 ## Phase 9 — Evidence reports

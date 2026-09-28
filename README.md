@@ -1532,6 +1532,41 @@ export async function POST(request: Request) {
 
 The real implementation should avoid accepting `organizationId` from the client where it can instead be derived from the authenticated route/context.
 
+### Paging
+
+Two endpoints return a page of history, and both work the same way (TASK-018a,
+TASK-026; PR #34 review, note 3). The rule is written here because a caller
+cannot infer it from a response:
+
+```
+GET …/ai-systems/{id}/disclosures?before={version}
+GET …/deployments/{id}/verification-checks?before={checkWindow}
+```
+
+- A page holds at most **200** rows, newest first. The same 200 everywhere, so a
+  reader who follows a link gets the rows the endpoint would give them.
+- `truncated: true` means more rows exist below the last one in the page.
+  **No cursor is returned.** Ask again with the last row's own key — its
+  `version` for a disclosure, its `checkWindow` for a verification check — as
+  `before`. The cursor is a key the rows already carry, so the response does not
+  repeat it.
+- `before` is exclusive: the row it names is not in the page, so following a
+  cursor cannot repeat a row.
+- Each cursor is a value that is unique within what is being paged — a
+  disclosure's `version` per AI system, a check's `check_window` per deployment.
+  That is deliberate: a cursor that could tie would let a page boundary skip a
+  row.
+- A cursor that is not well formed is `400`. A well-formed cursor below every
+  row is an empty page, which is the true answer rather than an error.
+- `before` given twice is not well formed either: two cursors name two
+  different pages, and preferring one of them would answer a question the
+  caller did not ask. Every list here refuses a repeated query parameter for
+  the same reason.
+- There is no way to page toward newer rows. Start again without `before`.
+
+A response never carries a total count. Counting the rows a tenant has is a
+second query whose cost grows with the history, for a number no screen needs.
+
 ---
 
 ## 32. Database Rules

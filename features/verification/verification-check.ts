@@ -217,6 +217,31 @@ const digest = z.string().regex(/^[0-9a-f]{64}$/);
 const timestamp = z.iso.datetime({ offset: true });
 
 /**
+ * Where a page of the history starts: checks in windows before this one
+ * (TASK-026).
+ *
+ * The cursor is `check_window` rather than `checked_at`, because
+ * `unique (deployment_id, check_window)` guarantees one row per deployment per
+ * window — so a `<` cursor cannot skip a row, by the schema rather than by how
+ * the data happens to look. `checked_at` is not unique, and two rows sharing a
+ * timestamp would make a page boundary silently drop a row of permanent
+ * evidence (owner, 2026-09-27).
+ *
+ * A full timestamp rather than a date. `?before=2026-09-27` would read better
+ * while windows are daily, and it would break the day the window length
+ * changes; a window is our schedule's bucket rather than a date a customer
+ * chose (README §18).
+ *
+ * It arrives as text, from a query parameter, so it is read as text first and
+ * only then as a time. A valid timestamp older than every row names an empty
+ * page, which is the true answer; text that is not a timestamp is a caller's
+ * bug and the route refuses it rather than answering "no older checks".
+ */
+export const verificationCursorSchema = timestamp.transform(
+  (value) => new Date(value),
+);
+
+/**
  * One row as the database returns it. The shape mirrors the table, with
  * the same rule tying the two outcome columns together: a success carries
  * no reason and a failure always carries one.
